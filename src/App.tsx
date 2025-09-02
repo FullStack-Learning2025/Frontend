@@ -56,6 +56,12 @@ import TeacherBlogs from './pages/teacher/Blogs';
 import TeacherCreateBlog from './pages/teacher/CreateBlog';
 
 import ProtectedRoute from './components/ProtectedRoute';
+// Student components
+import StudentLayout from './layouts/StudentLayout';
+import StudentDashboard from './pages/student/Dashboard';
+import StudentCourses from './pages/student/Courses';
+import StudentExams from './pages/student/Exams';
+import StudentBlogs from './pages/student/Blogs';
 
 function App() {
   return (
@@ -110,6 +116,16 @@ function App() {
                   <Route path="create-promo" element={<AdminPromoDetail />} />
                   <Route path="privacy-policy" element={<PrivacyPolicyAdmin />} />
                   <Route path="terms-conditions" element={<TermsConditionsAdmin />} />
+                </Route>
+              </Route>
+
+              {/* Student Routes */}
+              <Route element={<ProtectedRoute allowedRoles={['student']} />}>
+                <Route path="/student" element={<StudentLayout />}>
+                  <Route path="dashboard" element={<StudentDashboard />} />
+                  <Route path="courses" element={<StudentCourses />} />
+                  <Route path="exams" element={<StudentExams />} />
+                  <Route path="blogs" element={<StudentBlogs />} />
                 </Route>
               </Route>
 

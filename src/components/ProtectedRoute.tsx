@@ -30,6 +30,8 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
         window.location.href = '/admin/dashboard';
       } else if (role === 'teacher') {
         window.location.href = '/teacher/dashboard';
+      } else if (role === 'student') {
+        window.location.href = '/student/dashboard';
       }
     }
   }, [isAuthenticated, location.pathname, role]);
@@ -51,6 +53,8 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     return <Navigate to="/admin/dashboard" replace />;
   } else if (role === 'teacher') {
     return <Navigate to="/teacher/dashboard" replace />;
+  } else if (role === 'student') {
+    return <Navigate to="/student/dashboard" replace />;
   }
 
   // Fallback to login if something is wrong

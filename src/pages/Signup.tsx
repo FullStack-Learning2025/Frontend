@@ -15,14 +15,24 @@ import { useAuth } from '../contexts/AuthContext';
 const Signup = () => {
     const navigate = useNavigate();
     const { isAuthenticated, role, isLoading } = useAuth();
-    const [form, setForm] = useState({
+    // Separate form states for Teacher and Student to preserve inputs per tab
+    const [teacherForm, setTeacherForm] = useState({
         fullName: '',
         displayName: '',
         email: '',
         phoneNumber: '',
         password: '',
         confirmPassword: '',
-        profileImage: null,
+        profileImage: null as File | null,
+    });
+    const [studentForm, setStudentForm] = useState({
+        fullName: '',
+        displayName: '',
+        email: '',
+        phoneNumber: '',
+        password: '',
+        confirmPassword: '',
+        profileImage: null as File | null,
     });
     const [showCodeInput, setShowCodeInput] = useState(false);
     const [code, setCode] = useState('');
@@ -36,6 +46,8 @@ const Signup = () => {
     const [showPhoneModal, setShowPhoneModal] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+    // Tab state: teacher | student
+    const [activeTab, setActiveTab] = useState('teacher');
 
     // Email verification states
     const [showEmailVerificationModal, setShowEmailVerificationModal] = useState(false);
@@ -43,6 +55,9 @@ const Signup = () => {
     const [emailCodeError, setEmailCodeError] = useState('');
     const [emailVerificationTimer, setEmailVerificationTimer] = useState(120);
     const [canResendEmailCode, setCanResendEmailCode] = useState(false);
+    
+    // Remember the email used during registration to avoid cross-tab confusion during verification
+    const [registeredEmail, setRegisteredEmail] = useState<string>('');
 
     // Redirect if already authenticated
     useEffect(() => {
@@ -105,30 +120,38 @@ const Signup = () => {
 
     const handleChange = (e) => {
         const { name, value, files } = e.target;
-        setForm((prev) => ({
-            ...prev,
-            [name]: files ? files[0] : value,
-        }));
+        if (activeTab === 'teacher') {
+            setTeacherForm((prev) => ({
+                ...prev,
+                [name]: files ? files[0] : value,
+            }));
+        } else {
+            setStudentForm((prev) => ({
+                ...prev,
+                [name]: files ? files[0] : value,
+            }));
+        }
     };
 
     const handlePhoneChange = (value) => {
-        setForm(prev => ({
-            ...prev,
-            phoneNumber: value
-        }));
+        if (activeTab === 'teacher') {
+            setTeacherForm(prev => ({ ...prev, phoneNumber: value }));
+        } else {
+            setStudentForm(prev => ({ ...prev, phoneNumber: value }));
+        }
     };
 
-    const validateForm = () => {
-        if (!form.fullName || !form.displayName || !form.email || !form.phoneNumber || !form.password || !form.confirmPassword) {
+    const validateForm = (formToValidate) => {
+        if (!formToValidate.fullName || !formToValidate.displayName || !formToValidate.email || !formToValidate.phoneNumber || !formToValidate.password || !formToValidate.confirmPassword) {
             return 'Please fill in all required fields.';
         }
-        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email)) {
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(formToValidate.email)) {
             return 'Please enter a valid email address.';
         }
-        if (form.password !== form.confirmPassword) {
+        if (formToValidate.password !== formToValidate.confirmPassword) {
             return 'Passwords do not match.';
         }
-        if (form.phoneNumber.length < 8) {
+        if (formToValidate.phoneNumber.length < 8) {
             return 'Please enter a valid phone number.';
         }
         return '';
@@ -156,9 +179,12 @@ const Signup = () => {
         }
     };
 
+    
+
     const handleSubmit = async (e) => {
         e.preventDefault();
-        const error = validateForm();
+        const currentForm = activeTab === 'teacher' ? teacherForm : studentForm;
+        const error = validateForm(currentForm);
         if (error) {
             setFormError(error);
             toast.error(error);
@@ -169,8 +195,8 @@ const Signup = () => {
 
         try {
             let profileImageUrl = null;
-            if (form.profileImage) {
-                profileImageUrl = await uploadToBackend(form.profileImage);
+            if (currentForm.profileImage) {
+                profileImageUrl = await uploadToBackend(currentForm.profileImage);
             }
 
             const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/users`, {
@@ -179,12 +205,13 @@ const Signup = () => {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    full_name: form.fullName,
-                    display_name: form.displayName,
-                    email: form.email,
-                    contact_number: form.phoneNumber,
-                    password: form.password,
-                    profile_image: profileImageUrl
+                    full_name: currentForm.fullName,
+                    display_name: currentForm.displayName,
+                    email: currentForm.email,
+                    contact_number: currentForm.phoneNumber,
+                    password: currentForm.password,
+                    profile_image: profileImageUrl,
+                    role: activeTab === 'teacher' ? 'teacher' : 'student',
                 }),
             });
 
@@ -195,6 +222,7 @@ const Signup = () => {
             }
 
             setUserId(data.id);
+            setRegisteredEmail(currentForm.email);
             // navigate('/login');
             setShowCodeInput(true);
             toast.success('Registration successful! Please check your phone for the verification code.');
@@ -248,7 +276,7 @@ const Signup = () => {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    email: form.email
+                    email: registeredEmail || (activeTab === 'teacher' ? teacherForm.email : studentForm.email)
                 }),
             });
 
@@ -267,7 +295,9 @@ const Signup = () => {
     };
 
     const handleUpdatePhone = async () => {
-        if (!form.phoneNumber || !form.email) {
+        const currentForm = activeTab === 'teacher' ? teacherForm : studentForm;
+        const emailToUse = registeredEmail || currentForm.email;
+        if (!currentForm.phoneNumber || !emailToUse) {
             toast.error('Please enter a valid phone number and email');
             return;
         }
@@ -279,8 +309,8 @@ const Signup = () => {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    email: form.email,
-                    contact_number: form.phoneNumber
+                    email: emailToUse,
+                    contact_number: currentForm.phoneNumber
                 }),
             });
 
@@ -308,7 +338,7 @@ const Signup = () => {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    email: form.email
+                    email: registeredEmail || (activeTab === 'teacher' ? teacherForm.email : studentForm.email)
                 }),
             });
 
@@ -342,7 +372,7 @@ const Signup = () => {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    email: form.email,
+                    email: registeredEmail || (activeTab === 'teacher' ? teacherForm.email : studentForm.email),
                     emailCode: emailCode
                 }),
             });
@@ -370,7 +400,7 @@ const Signup = () => {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    email: form.email
+                    email: registeredEmail || (activeTab === 'teacher' ? teacherForm.email : studentForm.email)
                 }),
             });
 
@@ -409,137 +439,311 @@ const Signup = () => {
                     {/* Right: Signup Card */}
                     <div className="flex-1 flex flex-col items-center">
                         <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8 z-10">
-                            <div className="flex flex-col items-center mb-6">
-                                <h2 className="text-3xl font-extrabold text-[#7C3AED] mb-1 tracking-tight">Teacher Registration</h2>
-                                <p className="text-gray-600 text-base text-center">Create a teacher account to publish courses and manage exams.</p>
+                            {/* Tabs */}
+                            <div className="mb-6 flex items-center justify-center">
+                                <div className="relative w-full max-w-sm bg-gradient-to-r from-[#7C3AED]/30 via-[#8B5CF6]/20 to-[#7C3AED]/30 backdrop-blur-md rounded-2xl p-1 shadow-inner border border-white/30 drop-shadow">
+                                    {/* Glass slider */}
+                                    <div
+                                        className="absolute top-1 bottom-1 left-1 rounded-xl bg-white/60 backdrop-blur-md border border-white/50 shadow transition-transform duration-300 ease-out"
+                                        style={{ width: 'calc(50% - 0.25rem)', transform: activeTab === 'teacher' ? 'translateX(0)' : 'translateX(calc(100% + 0.25rem))' }}
+                                    />
+                                    <div className="relative grid grid-cols-2 gap-0">
+                                        <button
+                                            type="button"
+                                            onClick={() => setActiveTab('teacher')}
+                                            className={`w-full px-6 py-2.5 rounded-xl text-sm md:text-base font-semibold transition-colors duration-200 ${activeTab === 'teacher' ? 'text-[#7C3AED]' : 'text-gray-700 hover:text-gray-900'}`}
+                                        >
+                                            Teacher
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setActiveTab('student')}
+                                            className={`w-full px-6 py-2.5 rounded-xl text-sm md:text-base font-semibold transition-colors duration-200 ${activeTab === 'student' ? 'text-[#7C3AED]' : 'text-gray-700 hover:text-gray-900'}`}
+                                        >
+                                            Student
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
-                            {success ? (
-                                <div className="text-center text-green-600 font-semibold text-lg py-8 animate-fadein">Registration Successful!</div>
-                            ) : (
-                                <form onSubmit={handleSubmit} className="space-y-5">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-                                        <input type="text" name="fullName" value={form.fullName} onChange={handleChange} required className="mt-1 w-full rounded-lg border border-gray-300 bg-white/70 px-3 py-2 focus:outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED] transition-all duration-200" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Display Name</label>
-                                        <input type="text" name="displayName" value={form.displayName} onChange={handleChange} required className="mt-1 w-full rounded-lg border border-gray-300 bg-white/70 px-3 py-2 focus:outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED] transition-all duration-200" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                                        <input type="email" name="email" value={form.email} onChange={handleChange} required className="mt-1 w-full rounded-lg border border-gray-300 bg-white/70 px-3 py-2 focus:outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED] transition-all duration-200" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Contact Number</label>
-                                        <PhoneInput
-                                            country={'gb'}
-                                            value={form.phoneNumber}
-                                            onChange={handlePhoneChange}
-                                            inputClass="w-full rounded-lg border border-gray-300 bg-white/70 px-3 py-2 focus:outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED] transition-all duration-200"
-                                            buttonClass="!border !border-gray-300 !bg-white/70 !rounded-l-lg !w-[40px]"
-                                            containerClass="mt-1"
-                                            searchClass="!w-full !rounded-lg !border !border-gray-300 !bg-white/70 !px-3 !py-2 !focus:outline-none !focus:border-[#7C3AED] !focus:ring-2 !focus:ring-[#7C3AED] !transition-all !duration-200"
-                                            searchPlaceholder="Search country..."
-                                            enableSearch={true}
-                                            searchNotFound="Country not found"
-                                            inputProps={{
-                                                required: true,
-                                                name: 'phoneNumber',
-                                            }}
-                                            dropdownClass="!w-[300px] !max-h-[200px] !overflow-y-auto"
-                                            buttonStyle={{
-                                                border: '1px solid #D1D5DB',
-                                                backgroundColor: 'rgba(255, 255, 255, 0.7)',
-                                                borderRadius: '0.5rem 0 0 0.5rem',
-                                                width: '40px',
-                                                minWidth: '40px',
-                                                maxWidth: '40px',
-                                                padding: 0
-                                            }}
-                                            inputStyle={{
-                                                width: '100%',
-                                                height: '42px',
-                                                border: '1px solid #D1D5DB',
-                                                backgroundColor: 'rgba(255, 255, 255, 0.7)',
-                                                borderRadius: '0 0.5rem 0.5rem 0',
-                                                paddingLeft: '45px'
-                                            }}
-                                            searchStyle={{
-                                                width: '100%',
-                                                border: '1px solid #D1D5DB',
-                                                backgroundColor: 'rgba(255, 255, 255, 0.7)',
-                                                borderRadius: '0.5rem',
-                                                padding: '0.5rem'
-                                            }}
-                                            countryCodeEditable={false}
-                                            disableSearchIcon={true}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                                        <div className="relative">
-                                            <input 
-                                                type={showPassword ? "text" : "password"} 
-                                                name="password" 
-                                                value={form.password} 
-                                                onChange={handleChange} 
-                                                required 
-                                                className="mt-1 w-full rounded-lg border border-gray-300 bg-white/70 px-3 py-2 focus:outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED] transition-all duration-200" 
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={() => setShowPassword(!showPassword)}
-                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
-                                            >
-                                                {showPassword ? (
-                                                    <EyeOff className="h-5 w-5" />
-                                                ) : (
-                                                    <Eye className="h-5 w-5" />
-                                                )}
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
-                                        <div className="relative">
-                                            <input 
-                                                type={showConfirmPassword ? "text" : "password"} 
-                                                name="confirmPassword" 
-                                                value={form.confirmPassword} 
-                                                onChange={handleChange} 
-                                                required 
-                                                className="mt-1 w-full rounded-lg border border-gray-300 bg-white/70 px-3 py-2 focus:outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED] transition-all duration-200" 
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
-                                            >
-                                                {showConfirmPassword ? (
-                                                    <EyeOff className="h-5 w-5" />
-                                                ) : (
-                                                    <Eye className="h-5 w-5" />
-                                                )}
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Profile Image (optional)</label>
-                                        <input type="file" name="profileImage" accept="image/*" onChange={handleChange} className="mt-1 w-full rounded-lg border border-gray-300 bg-white/70 px-3 py-2" />
-                                    </div>
-                                    {formError && (
-                                        <div className="w-full text-center text-red-600 font-semibold text-base mb-2 animate-fadein">{formError}</div>
-                                    )}
 
-                                    <button 
-                                        type="submit" 
-                                        disabled={isSubmitting}
-                                        className={`w-full bg-[#7C3AED] text-white font-semibold py-2 rounded-lg shadow-lg hover:bg-[#6d28d9] hover:scale-105 transition-all duration-200 ${isSubmitting ? 'opacity-70 cursor-not-allowed' : ''}`}
-                                    >
-                                        {isSubmitting ? 'Signing up...' : 'Sign Up'}
-                                    </button>
-                                </form>
+                            {/* Header */}
+                            <div className="flex flex-col items-center mb-6 animate-fadein">
+                                <h2 className="text-3xl font-extrabold text-[#7C3AED] mb-1 tracking-tight">
+                                    {activeTab === 'teacher' ? 'Teacher Registration' : 'Student Registration'}
+                                </h2>
+                                <p className="text-gray-600 text-base text-center">
+                                    {activeTab === 'teacher'
+                                        ? 'Create a teacher account to publish courses and manage exams.'
+                                        : 'Create a student account to enroll in courses and take exams.'}
+                                </p>
+                            </div>
+
+                            {/* Teacher Form (UNCHANGED behavior) */}
+                            {activeTab === 'teacher' && (
+                                <>
+                                    {success ? (
+                                        <div className="text-center text-green-600 font-semibold text-lg py-8 animate-fadein">Registration Successful!</div>
+                                    ) : (
+                                        <form onSubmit={handleSubmit} className="space-y-5">
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                                                <input type="text" name="fullName" value={teacherForm.fullName} onChange={handleChange} required className="mt-1 w-full rounded-lg border border-gray-300 bg-white/70 px-3 py-2 focus:outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED] transition-all duration-200" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Display Name</label>
+                                                <input type="text" name="displayName" value={teacherForm.displayName} onChange={handleChange} required className="mt-1 w-full rounded-lg border border-gray-300 bg-white/70 px-3 py-2 focus:outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED] transition-all duration-200" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                                                <input type="email" name="email" value={teacherForm.email} onChange={handleChange} required className="mt-1 w-full rounded-lg border border-gray-300 bg-white/70 px-3 py-2 focus:outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED] transition-all duration-200" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Contact Number</label>
+                                                <PhoneInput
+                                                    country={'gb'}
+                                                    value={teacherForm.phoneNumber}
+                                                    onChange={handlePhoneChange}
+                                                    inputClass="w-full rounded-lg border border-gray-300 bg-white/70 px-3 py-2 focus:outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED] transition-all duration-200"
+                                                    buttonClass="!border !border-gray-300 !bg-white/70 !rounded-l-lg !w-[40px]"
+                                                    containerClass="mt-1"
+                                                    searchClass="!w-full !rounded-lg !border !border-gray-300 !bg-white/70 !px-3 !py-2 !focus:outline-none !focus:border-[#7C3AED] !focus:ring-2 !focus:ring-[#7C3AED] !transition-all !duration-200"
+                                                    searchPlaceholder="Search country..."
+                                                    enableSearch={true}
+                                                    searchNotFound="Country not found"
+                                                    inputProps={{
+                                                        required: true,
+                                                        name: 'phoneNumber',
+                                                    }}
+                                                    dropdownClass="!w-[300px] !max-h-[200px] !overflow-y-auto"
+                                                    buttonStyle={{
+                                                        border: '1px solid #D1D5DB',
+                                                        backgroundColor: 'rgba(255, 255, 255, 0.7)',
+                                                        borderRadius: '0.5rem 0 0 0.5rem',
+                                                        width: '40px',
+                                                        minWidth: '40px',
+                                                        maxWidth: '40px',
+                                                        padding: 0
+                                                    }}
+                                                    inputStyle={{
+                                                        width: '100%',
+                                                        height: '42px',
+                                                        border: '1px solid #D1D5DB',
+                                                        backgroundColor: 'rgba(255, 255, 255, 0.7)',
+                                                        borderRadius: '0 0.5rem 0.5rem 0',
+                                                        paddingLeft: '45px'
+                                                    }}
+                                                    searchStyle={{
+                                                        width: '100%',
+                                                        border: '1px solid #D1D5DB',
+                                                        backgroundColor: 'rgba(255, 255, 255, 0.7)',
+                                                        borderRadius: '0.5rem',
+                                                        padding: '0.5rem'
+                                                    }}
+                                                    countryCodeEditable={false}
+                                                    disableSearchIcon={true}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                                                <div className="relative">
+                                                    <input 
+                                                        type={showPassword ? "text" : "password"} 
+                                                        name="password" 
+                                                        value={teacherForm.password} 
+                                                        onChange={handleChange} 
+                                                        required 
+                                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-white/70 px-3 py-2 focus:outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED] transition-all duration-200" 
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowPassword(!showPassword)}
+                                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                                                    >
+                                                        {showPassword ? (
+                                                            <EyeOff className="h-5 w-5" />
+                                                        ) : (
+                                                            <Eye className="h-5 w-5" />
+                                                        )}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
+                                                <div className="relative">
+                                                    <input 
+                                                        type={showConfirmPassword ? "text" : "password"} 
+                                                        name="confirmPassword" 
+                                                        value={teacherForm.confirmPassword} 
+                                                        onChange={handleChange} 
+                                                        required 
+                                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-white/70 px-3 py-2 focus:outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED] transition-all duration-200" 
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                                                    >
+                                                        {showConfirmPassword ? (
+                                                            <EyeOff className="h-5 w-5" />
+                                                        ) : (
+                                                            <Eye className="h-5 w-5" />
+                                                        )}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Profile Image (optional)</label>
+                                                <input type="file" name="profileImage" accept="image/*" onChange={handleChange} className="mt-1 w-full rounded-lg border border-gray-300 bg-white/70 px-3 py-2" />
+                                            </div>
+                                            {formError && (
+                                                <div className="w-full text-center text-red-600 font-semibold text-base mb-2 animate-fadein">{formError}</div>
+                                            )}
+
+                                            <button 
+                                                type="submit" 
+                                                disabled={isSubmitting}
+                                                className={`w-full bg-[#7C3AED] text-white font-semibold py-2 rounded-lg shadow-lg hover:bg-[#6d28d9] hover:scale-105 transition-all duration-200 ${isSubmitting ? 'opacity-70 cursor-not-allowed' : ''}`}
+                                            >
+                                                {isSubmitting ? 'Signing up...' : 'Sign Up'}
+                                            </button>
+                                        </form>
+                                    )}
+                                </>
                             )}
+
+                            {/* Student Form (new) */}
+                            {activeTab === 'student' && (
+                                <>
+                                    {success ? (
+                                        <div className="text-center text-green-600 font-semibold text-lg py-8 animate-fadein">Registration Successful!</div>
+                                    ) : (
+                                        <form onSubmit={handleSubmit} className="space-y-5">
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                                                <input type="text" name="fullName" value={studentForm.fullName} onChange={handleChange} required className="mt-1 w-full rounded-lg border border-gray-300 bg-white/70 px-3 py-2 focus:outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED] transition-all duration-200" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Display Name</label>
+                                                <input type="text" name="displayName" value={studentForm.displayName} onChange={handleChange} required className="mt-1 w-full rounded-lg border border-gray-300 bg-white/70 px-3 py-2 focus:outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED] transition-all duration-200" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                                                <input type="email" name="email" value={studentForm.email} onChange={handleChange} required className="mt-1 w-full rounded-lg border border-gray-300 bg-white/70 px-3 py-2 focus:outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED] transition-all duration-200" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Contact Number</label>
+                                                <PhoneInput
+                                                    country={'gb'}
+                                                    value={studentForm.phoneNumber}
+                                                    onChange={handlePhoneChange}
+                                                    inputClass="w-full rounded-lg border border-gray-300 bg-white/70 px-3 py-2 focus:outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED] transition-all duration-200"
+                                                    buttonClass="!border !border-gray-300 !bg-white/70 !rounded-l-lg !w-[40px]"
+                                                    containerClass="mt-1"
+                                                    searchClass="!w-full !rounded-lg !border !border-gray-300 !bg-white/70 !px-3 !py-2 !focus:outline-none !focus:border-[#7C3AED] !focus:ring-2 !focus:ring-[#7C3AED] !transition-all !duration-200"
+                                                    searchPlaceholder="Search country..."
+                                                    enableSearch={true}
+                                                    searchNotFound="Country not found"
+                                                    inputProps={{
+                                                        required: true,
+                                                        name: 'phoneNumber',
+                                                    }}
+                                                    dropdownClass="!w-[300px] !max-h-[200px] !overflow-y-auto"
+                                                    buttonStyle={{
+                                                        border: '1px solid #D1D5DB',
+                                                        backgroundColor: 'rgba(255, 255, 255, 0.7)',
+                                                        borderRadius: '0.5rem 0 0 0.5rem',
+                                                        width: '40px',
+                                                        minWidth: '40px',
+                                                        maxWidth: '40px',
+                                                        padding: 0
+                                                    }}
+                                                    inputStyle={{
+                                                        width: '100%',
+                                                        height: '42px',
+                                                        border: '1px solid #D1D5DB',
+                                                        backgroundColor: 'rgba(255, 255, 255, 0.7)',
+                                                        borderRadius: '0 0.5rem 0.5rem 0',
+                                                        paddingLeft: '45px'
+                                                    }}
+                                                    searchStyle={{
+                                                        width: '100%',
+                                                        border: '1px solid #D1D5DB',
+                                                        backgroundColor: 'rgba(255, 255, 255, 0.7)',
+                                                        borderRadius: '0.5rem',
+                                                        padding: '0.5rem'
+                                                    }}
+                                                    countryCodeEditable={false}
+                                                    disableSearchIcon={true}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                                                <div className="relative">
+                                                    <input 
+                                                        type={showPassword ? "text" : "password"} 
+                                                        name="password" 
+                                                        value={studentForm.password} 
+                                                        onChange={handleChange} 
+                                                        required 
+                                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-white/70 px-3 py-2 focus:outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED] transition-all duration-200" 
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowPassword(!showPassword)}
+                                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                                                    >
+                                                        {showPassword ? (
+                                                            <EyeOff className="h-5 w-5" />
+                                                        ) : (
+                                                            <Eye className="h-5 w-5" />
+                                                        )}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
+                                                <div className="relative">
+                                                    <input 
+                                                        type={showConfirmPassword ? "text" : "password"} 
+                                                        name="confirmPassword" 
+                                                        value={studentForm.confirmPassword} 
+                                                        onChange={handleChange} 
+                                                        required 
+                                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-white/70 px-3 py-2 focus:outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED] transition-all duration-200" 
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                                                    >
+                                                        {showConfirmPassword ? (
+                                                            <EyeOff className="h-5 w-5" />
+                                                        ) : (
+                                                            <Eye className="h-5 w-5" />
+                                                        )}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Profile Image (optional)</label>
+                                                <input type="file" name="profileImage" accept="image/*" onChange={handleChange} className="mt-1 w-full rounded-lg border border-gray-300 bg-white/70 px-3 py-2" />
+                                            </div>
+                                            {formError && (
+                                                <div className="w-full text-center text-red-600 font-semibold text-base mb-2 animate-fadein">{formError}</div>
+                                            )}
+
+                                            <button 
+                                                type="submit" 
+                                                disabled={isSubmitting}
+                                                className={`w-full bg-[#7C3AED] text-white font-semibold py-2 rounded-lg shadow-lg hover:bg-[#6d28d9] hover:scale-105 transition-all duration-200 ${isSubmitting ? 'opacity-70 cursor-not-allowed' : ''}`}
+                                            >
+                                                {isSubmitting ? 'Signing up...' : 'Sign Up'}
+                                            </button>
+                                        </form>
+                                    )}
+                                </>
+                            )}
+
                             <div className="text-center mt-4 text-sm text-gray-600">
                                 Already have an account? <a href="/login" className="text-[#7C3AED] font-semibold hover:underline">Login</a>
                                 <div className="mt-2 space-x-4">
@@ -638,7 +842,7 @@ const Signup = () => {
                         <div className="mb-4">Enter your new phone number</div>
                         <PhoneInput
                             country={'gb'}
-                            value={form.phoneNumber}
+                            value={activeTab === 'teacher' ? teacherForm.phoneNumber : studentForm.phoneNumber}
                             onChange={handlePhoneChange}
                             inputClass="w-full rounded-lg border border-gray-300 bg-white/70 px-3 py-2 focus:outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED] transition-all duration-200"
                             buttonClass="!border !border-gray-300 !bg-white/70 !rounded-l-lg !w-[40px]"

@@ -77,6 +77,10 @@ const CreateQuestion = () => {
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
 
+  // Additional UI state
+  const [selectedRule, setSelectedRule] = useState("");
+  const [noteText, setNoteText] = useState("");
+
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [questionsPerPage] = useState(100);
@@ -770,6 +774,25 @@ const CreateQuestion = () => {
               </option>
             ))}
           </select>
+
+          {/* Select Rule dropdown */}
+          <div className="mt-4">
+            <label htmlFor="rule" className="block text-sm font-medium text-gray-700 mb-1">
+              Select Rule
+            </label>
+            <select
+              id="rule"
+              value={selectedRule}
+              onChange={(e) => setSelectedRule(e.target.value)}
+              className={cn(
+                "w-full p-2 border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-primary text-sm sm:text-base"
+              )}
+            >
+              <option value="">Select a rule</option>
+              <option value="rule1">Rule 1</option>
+              <option value="rule2">Rule 2</option>
+            </select>
+          </div>
         </div>
 
         <div>
@@ -809,6 +832,20 @@ const CreateQuestion = () => {
               </option>
             ))}
           </select>
+
+          {/* Add Note input */}
+          <div className="mt-4">
+            <label htmlFor="note" className="block text-sm font-medium text-gray-700 mb-1">
+              Add Note
+            </label>
+            <Input
+              id="note"
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              placeholder="Enter a note"
+              className="w-full"
+            />
+          </div>
         </div>
       </div>
 
