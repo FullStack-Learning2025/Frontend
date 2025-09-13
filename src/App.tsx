@@ -25,6 +25,7 @@ import AdminTeachers from './pages/admin/Teachers';
 import AdminTeacherDetails from './pages/admin/TeacherDetails';
 import AdminCourses from './pages/admin/Courses';
 import AdminCreateCourse from './pages/admin/CreateCourse';
+import AdminAssignCourse from './pages/admin/AssignCourse';
 import AdminLessons from './pages/admin/Lessons';
 import AdminExams from './pages/admin/Exams';
 import AdminCreateExam from './pages/admin/CreateExam';
@@ -59,9 +60,12 @@ import ProtectedRoute from './components/ProtectedRoute';
 // Student components
 import StudentLayout from './layouts/StudentLayout';
 import StudentDashboard from './pages/student/Dashboard';
-import StudentCourses from './pages/student/Courses';
 import StudentExams from './pages/student/Exams';
+import StudentQuestions from './pages/student/Questions';
+import StudentLessons from './pages/student/Lessons';
 import StudentBlogs from './pages/student/Blogs';
+import StudentProgress from './pages/student/Progress';
+import StudentWinningQuestions from './pages/student/WinningQuestions.tsx';
 
 function App() {
   return (
@@ -101,6 +105,7 @@ function App() {
                   <Route path="teachers/:id" element={<AdminTeacherDetails />} />
                   <Route path="courses" element={<AdminCourses />} />
                   <Route path="create-course" element={<AdminCreateCourse />} />
+                  <Route path="assign-course" element={<AdminAssignCourse />} />
                   <Route path="lessons" element={<AdminLessons />} />
                   <Route path="exams" element={<AdminExams />} />
                   <Route path="create-exam" element={<AdminCreateExam />} />
@@ -123,9 +128,14 @@ function App() {
               <Route element={<ProtectedRoute allowedRoles={['student']} />}>
                 <Route path="/student" element={<StudentLayout />}>
                   <Route path="dashboard" element={<StudentDashboard />} />
-                  <Route path="courses" element={<StudentCourses />} />
+                  {/* Rename: Courses -> Exams view (keep courses path for backward-compat) */}
                   <Route path="exams" element={<StudentExams />} />
+                  <Route path="questions" element={<StudentQuestions />} />
+                  {/* New Lessons tab (formerly Exams) */}
+                  <Route path="lessons" element={<StudentLessons />} />
                   <Route path="blogs" element={<StudentBlogs />} />
+                  <Route path="winningquestion" element={<StudentWinningQuestions />} />
+                  <Route path="progress" element={<StudentProgress />} />
                 </Route>
               </Route>
 

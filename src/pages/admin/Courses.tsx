@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { 
   Table, 
   TableBody, 
@@ -20,7 +20,10 @@ interface Course {
   id: string;
   title: string;
   description: string;
-  category: string[];
+  category: any;
+  categories?: string[];
+  rules?: string[] | string | null;
+  notes?: string[] | string | null;
   cover_image: string;
   teacher_id: string;
   created_at: string;
@@ -35,6 +38,7 @@ const Courses = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
+  const didFetch = useRef(false);
   
   const fetchCourses = async () => {
     try {
@@ -60,7 +64,10 @@ const Courses = () => {
   };
 
   useEffect(() => {
-    fetchCourses();
+    if (!didFetch.current && token) {
+      didFetch.current = true;
+      fetchCourses();
+    }
   }, [token]);
 
   const filteredCourses = courses?.filter(course => 
@@ -73,6 +80,24 @@ const Courses = () => {
       month: "short",
       day: "numeric"
     });
+  };
+
+  const parseStringArray = (val: unknown): string[] => {
+    if (Array.isArray(val)) return val.map(String);
+    if (typeof val === 'string') {
+      const s = val.trim();
+      try {
+        if (s.startsWith('[') && s.endsWith(']')) {
+          const arr = JSON.parse(s);
+          if (Array.isArray(arr)) return arr.map(String);
+        }
+      } catch {}
+      return s
+        .split(',')
+        .map((c) => c.replace(/^[\[\s\"]+|[\]\s\"]+$/g, '').trim())
+        .filter(Boolean);
+    }
+    return [];
   };
 
   const deleteCourse = async (courseId: string) => {
@@ -149,13 +174,22 @@ const Courses = () => {
         {/* Header Section */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Courses Management</h1>
-          <Button 
-            variant="default"
-            onClick={() => navigate("/admin/create-course")}
-            className="w-full sm:w-auto text-sm sm:text-base"
-          >
-            Add Course
-          </Button>
+          <div className="flex items-center gap-2 justify-end w-full sm:w-auto">
+            <Button 
+              variant="default"
+              onClick={() => navigate("/admin/create-course")}
+              className="text-sm sm:text-base"
+            >
+              Add Course
+            </Button>
+            <Button 
+              variant="default"
+              onClick={() => navigate("/admin/assign-course")}
+              className="text-sm sm:text-base"
+            >
+              Assign Course
+            </Button>
+          </div>
         </div>
 
         {/* Search Section */}
@@ -179,6 +213,8 @@ const Courses = () => {
                 <TableRow>
                   <TableHead className="text-xs sm:text-sm font-medium text-gray-900 bg-gray-50 whitespace-nowrap">Course Name</TableHead>
                   <TableHead className="text-xs sm:text-sm font-medium text-gray-900 bg-gray-50 whitespace-nowrap">Category</TableHead>
+                  <TableHead className="text-xs sm:text-sm font-medium text-gray-900 bg-gray-50 whitespace-nowrap">Rules</TableHead>
+                  <TableHead className="text-xs sm:text-sm font-medium text-gray-900 bg-gray-50 whitespace-nowrap">Notes</TableHead>
                   <TableHead className="text-xs sm:text-sm font-medium text-gray-900 bg-gray-50 whitespace-nowrap">Date Created</TableHead>
                   <TableHead className="text-xs sm:text-sm font-medium text-gray-900 bg-gray-50 whitespace-nowrap">Status</TableHead>
                   <TableHead className="text-right text-xs sm:text-sm font-medium text-gray-900 bg-gray-50 whitespace-nowrap">Actions</TableHead>
@@ -187,7 +223,7 @@ const Courses = () => {
               <TableBody>
                 {filteredCourses.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                       No courses created yet. Click "Add Course" to create your first course.
                     </TableCell>
                   </TableRow>
@@ -197,23 +233,17 @@ const Courses = () => {
                       <TableCell className="font-medium text-xs sm:text-sm text-gray-900 max-w-[150px] sm:max-w-none truncate">
                         {course.title}
                       </TableCell>
-                      <TableCell className="text-xs sm:text-sm">
-                        <div className="flex flex-wrap gap-1 max-w-[200px] sm:max-w-none">
-                          {course.category?.slice(0, 2).map((cat, index) => (
-                            <Badge 
-                              key={index} 
-                              variant="secondary" 
-                              className="text-xs px-2 py-0.5 whitespace-nowrap"
-                            >
-                              {cat}
-                            </Badge>
-                          ))}
-                          {course.category?.length > 2 && (
-                            <Badge variant="secondary" className="text-xs px-2 py-0.5">
-                              +{course.category.length - 2}
-                            </Badge>
-                          )}
-                        </div>
+                      <TableCell className="text-xs sm:text-sm text-gray-900">
+                        {(() => {
+                          const cats = (Array.isArray(course.categories) ? course.categories : parseStringArray(course.category)) || [];
+                          return cats.join(', ');
+                        })()}
+                      </TableCell>
+                      <TableCell className="text-xs sm:text-sm text-gray-900">
+                        {parseStringArray(course.rules ?? []).join(', ')}
+                      </TableCell>
+                      <TableCell className="text-xs sm:text-sm text-gray-900">
+                        {parseStringArray(course.notes ?? []).join(', ')}
                       </TableCell>
                       <TableCell className="text-xs sm:text-sm text-gray-600 whitespace-nowrap">
                         {formatDate(course.created_at)}

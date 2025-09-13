@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { 
   Table, 
   TableBody, 
@@ -40,6 +40,7 @@ const Teachers = () => {
   const { t } = useLanguage();
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
+  const didFetch = useRef(false);
   
   const fetchTeachers = async () => {
     try {
@@ -51,7 +52,11 @@ const Teachers = () => {
           }
         }
       );
-      setTeachers(response.data);
+      const data = response.data;
+      const list = Array.isArray(data)
+        ? data
+        : (Array.isArray(data?.data) ? data.data : (Array.isArray(data?.teachers) ? data.teachers : []));
+      setTeachers(list as Teacher[]);
     } catch (error) {
       toast({
         title: "Error",
@@ -64,10 +69,13 @@ const Teachers = () => {
   };
 
   useEffect(() => {
-    fetchTeachers();
+    if (!didFetch.current && token) {
+      didFetch.current = true;
+      fetchTeachers();
+    }
   }, [token]);
 
-  const filteredTeachers = teachers.filter(teacher => 
+  const filteredTeachers = (Array.isArray(teachers) ? teachers : []).filter(teacher => 
     teacher.full_name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     teacher.email.toLowerCase().includes(searchTerm.toLowerCase())
   );

@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
-import { Trash2, Plus, Youtube, HelpCircle, Check } from "lucide-react";
+import { Trash2, Plus, Youtube, HelpCircle, Check, Image as ImageIcon } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -20,6 +20,7 @@ interface Question {
   correct: string;
   hint?: string;
   video?: string;
+  image?: string;
   category: string;
   position?: number;
 }
@@ -27,11 +28,13 @@ interface Question {
 interface Course {
   id: string;
   title: string;
+  categories?: string[];
 }
 
 interface CourseTitle {
   id: string;
   title: string;
+  categories?: string[];
 }
 
 const CreateExam = () => {
@@ -49,6 +52,8 @@ const CreateExam = () => {
   const [selectedQuestions, setSelectedQuestions] = useState<string[]>([]);
   const [availableQuestions, setAvailableQuestions] = useState<Question[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
+  const [allCourses, setAllCourses] = useState<CourseTitle[]>([]);
+  const didFetchRef = useRef(false);
   const [selectedCourseId, setSelectedCourseId] = useState(courseIdFromUrl || "");
   const [selectedCategoryId, setSelectedCategoryId] = useState(categoryFromUrl || "");
   const [categories, setCategories] = useState<{ name: string }[]>([]);
@@ -62,6 +67,9 @@ const CreateExam = () => {
 
   useEffect(() => {
     const fetchCourses = async () => {
+      if (didFetchRef.current) return;
+      didFetchRef.current = true;
+      
       try {
         const response = await axios.get(`${import.meta.env.VITE_BACKEND_URL}/api/courses/titles`, {
           headers: {
@@ -69,25 +77,9 @@ const CreateExam = () => {
           }
         });
 
-        const allCourses = response.data.data;
-
-        const coursesByTitle = allCourses.reduce((acc: { [key: string]: CourseTitle[] }, current: CourseTitle) => {
-          if (!acc[current.title]) {
-            acc[current.title] = [];
-          }
-          acc[current.title].push(current);
-          return acc;
-        }, {});
-
-        const uniqueCourses = Object.values(coursesByTitle).map((courses: CourseTitle[]) => {
-          if (selectedCourseId) {
-            const matchingCourse = courses.find(c => c.id === selectedCourseId);
-            return matchingCourse || courses[0];
-          }
-          return courses[0];
-        });
-
-        setCourses(uniqueCourses);
+        const coursesData = response.data.data;
+        setAllCourses(coursesData);
+        setCourses(coursesData); // Show all courses, including duplicates
       } catch (error) {
         toast({
           title: "Error",
@@ -97,7 +89,9 @@ const CreateExam = () => {
       }
     };
 
-    fetchCourses();
+    if (token) {
+      fetchCourses();
+    }
   }, [token]);
 
   useEffect(() => {
@@ -155,39 +149,16 @@ const CreateExam = () => {
   }, [isEditMode, examId, courses, selectedCourseId, title]);
 
   useEffect(() => {
-    const fetchCategories = async () => {
-      if (!selectedCourseId) {
-        setCategories([]);
-        return;
-      }
-
-      try {
-        const response = await axios.get(
-          `${import.meta.env.VITE_BACKEND_URL}/api/courses/${selectedCourseId}/categories`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`
-            }
-          }
-        );
-        
-        if (response.data && response.data.data && response.data.data.category) {
-          const formattedCategories = response.data.data.category.map((name: string) => ({
-            name
-          }));
-          setCategories(formattedCategories);
-        }
-      } catch (error) {
-        toast({
-          title: "Error",
-          description: "Failed to fetch categories. Please try again.",
-          variant: "destructive"
-        });
-      }
-    };
-
-    fetchCategories();
-  }, [selectedCourseId, token]);
+    const selectedCourse = allCourses.find(course => course.id === selectedCourseId);
+    if (selectedCourse && selectedCourse.categories) {
+      const courseCategories = selectedCourse.categories.map(cat => ({ name: cat }));
+      setCategories(courseCategories);
+    } else {
+      setCategories([]);
+    }
+    // Reset category selection when course changes
+    setSelectedCategoryId("");
+  }, [selectedCourseId, allCourses]);
 
   useEffect(() => {
     const fetchQuestions = async () => {
@@ -601,6 +572,12 @@ const CreateExam = () => {
                           Has Video
                         </div>
                       )}
+                      {question.image && (
+                        <div className="flex items-center text-gray-600 text-xs sm:text-sm px-2 sm:px-3">
+                          <ImageIcon size={16} className="mr-1" />
+                          Has Image
+                        </div>
+                      )}
                       <Button
                         variant="ghost"
                         size="sm"
@@ -698,6 +675,7 @@ const CreateExam = () => {
                           Correct Answer: {getCorrectAnswerText(question)} | 
                           {question.hint && ' Has Hint |'} 
                           {question.video && ' Has Video'}
+                          {question.image && ' | Has Image'}
                         </p>
                       </div>
                       <Button

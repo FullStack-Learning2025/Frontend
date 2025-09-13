@@ -31,6 +31,7 @@ interface User {
   updated_at: string;
   role: string;
   status: "active" | "inactive";
+  level?: 'Beginner' | 'Intermediate' | 'Pro' | 'Master' | null;
 }
 
 const Users = () => {
@@ -164,6 +165,7 @@ const Users = () => {
               <TableHead className="text-xs sm:text-sm">{t.name || 'Name'}</TableHead>
               <TableHead className="text-xs sm:text-sm">{t.email || 'Email'}</TableHead>
               <TableHead className="text-xs sm:text-sm">{t.contact || 'Contact'}</TableHead>
+              <TableHead className="text-xs sm:text-sm">Level</TableHead>
               <TableHead className="text-xs sm:text-sm">{t.joinedDate || 'Joined Date'}</TableHead>
               <TableHead className="text-xs sm:text-sm">{t.status || 'Status'}</TableHead>
               <TableHead className="text-right text-xs sm:text-sm">{t.actions || 'Actions'}</TableHead>
@@ -182,21 +184,19 @@ const Users = () => {
                   <TableCell>
                     <div className="flex items-center gap-3">
                       <Avatar className="h-8 w-8">
-                        {
-                          user.profile_image.startsWith("http") ? (
+                        {(() => {
+                          const src = (user.profile_image && user.profile_image.startsWith("http"))
+                            ? user.profile_image
+                            : defaultAvatar;
+                          return (
                             <AvatarImage
-                              src={user.profile_image}
+                              src={src}
                               onError={(e) => {
                                 (e.currentTarget as HTMLImageElement).src = defaultAvatar;
                               }}
                             />
-                          ) : <AvatarImage
-                            src={defaultAvatar}
-                            onError={(e) => {
-                              (e.currentTarget as HTMLImageElement).src = defaultAvatar;
-                            }}
-                          />
-                        }
+                          );
+                        })()}
 
                       </Avatar>
                       <div>{user.full_name}</div>
@@ -204,6 +204,15 @@ const Users = () => {
                   </TableCell>
                   <TableCell>{user.email}</TableCell>
                   <TableCell>{user.contact_number}</TableCell>
+                  <TableCell>
+                    {user.level ? (
+                      <Badge variant="outline" className="border-purple-300 text-purple-700 bg-purple-50">
+                        {user.level}
+                      </Badge>
+                    ) : (
+                      <span className="text-xs text-gray-500">—</span>
+                    )}
+                  </TableCell>
                   <TableCell>{formatDate(user.created_at)}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">

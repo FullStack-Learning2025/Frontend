@@ -13,7 +13,8 @@ import {
   Globe,
   Upload,
   X,
-  Shield
+  Shield,
+  UserPlus
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
@@ -241,6 +242,11 @@ const AdminLayout = () => {
       path: "/admin/create-course",
     }, 
     {
+      title: 'Assign Course',
+      icon: <UserPlus className="h-5 w-5" />,
+      path: "/admin/assign-course",
+    },
+    {
       title: t.createExam,
       icon: <FileText className="h-5 w-5" />,
       path: "/admin/create-exam",
@@ -445,12 +451,6 @@ const AdminLayout = () => {
           <DialogContent className="sm:max-w-[425px]">
             <DialogTitle className="flex items-center justify-between">
               Edit Profile
-              <button
-                onClick={() => setShowProfileModal(false)}
-                className="rounded-full p-1 hover:bg-gray-100"
-              >
-                <X className="h-4 w-4" />
-              </button>
             </DialogTitle>
             <form onSubmit={handleSubmit} className="space-y-4">
               {/* Profile Image Upload */}

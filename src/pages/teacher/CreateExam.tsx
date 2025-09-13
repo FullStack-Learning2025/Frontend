@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
-import { Trash2, Plus, Youtube, HelpCircle, Check } from "lucide-react";
+import { Trash2, Plus, Youtube, HelpCircle, Check, Image as ImageIcon } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -20,6 +20,7 @@ interface Question {
   correct: string;
   hint?: string;
   video?: string;
+  image?: string;
   category: string;
   position?: number;
 }
@@ -27,11 +28,13 @@ interface Question {
 interface Course {
   id: string;
   title: string;
+  categories?: string[];
 }
 
 interface CourseTitle {
   id: string;
   title: string;
+  categories?: string[];
 }
 
 const TeacherCreateExam = () => {
@@ -49,9 +52,12 @@ const TeacherCreateExam = () => {
   const [selectedQuestions, setSelectedQuestions] = useState<string[]>([]);
   const [availableQuestions, setAvailableQuestions] = useState<Question[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
+  const [allCourses, setAllCourses] = useState<CourseTitle[]>([]);
+  const didFetchRef = useRef(false as any);
   const [selectedCourseId, setSelectedCourseId] = useState(courseIdFromUrl || "");
   const [selectedCategoryId, setSelectedCategoryId] = useState(categoryFromUrl || "");
   const [categories, setCategories] = useState<{ name: string }[]>([]);
+  
   const [isLoadingQuestions, setIsLoadingQuestions] = useState(false);
   const [examStatus, setExamStatus] = useState("draft");
   const [isLoading, setIsLoading] = useState(false);
@@ -62,32 +68,17 @@ const TeacherCreateExam = () => {
 
   useEffect(() => {
     const fetchCourses = async () => {
+      if (didFetchRef.current) return;
+      didFetchRef.current = true;
       try {
         const response = await axios.get(`${import.meta.env.VITE_BACKEND_URL}/api/courses/titles`, {
           headers: {
             Authorization: `Bearer ${token}`
           }
         });
-
-        const allCourses = response.data.data;
-
-        const coursesByTitle = allCourses.reduce((acc: { [key: string]: CourseTitle[] }, current: CourseTitle) => {
-          if (!acc[current.title]) {
-            acc[current.title] = [];
-          }
-          acc[current.title].push(current);
-          return acc;
-        }, {});
-
-        const uniqueCourses = Object.values(coursesByTitle).map((courses: CourseTitle[]) => {
-          if (selectedCourseId) {
-            const matchingCourse = courses.find(c => c.id === selectedCourseId);
-            return matchingCourse || courses[0];
-          }
-          return courses[0];
-        });
-
-        setCourses(uniqueCourses);
+        const coursesData = response.data.data as CourseTitle[];
+        setAllCourses(coursesData);
+        setCourses(coursesData); // show all, including duplicates
       } catch (error) {
         toast({
           title: "Error",
@@ -97,7 +88,9 @@ const TeacherCreateExam = () => {
       }
     };
 
-    fetchCourses();
+    if (token) {
+      fetchCourses();
+    }
   }, [token]);
 
   useEffect(() => {
@@ -141,53 +134,16 @@ const TeacherCreateExam = () => {
   }, [isEditMode, examId, token]);
 
   useEffect(() => {
-    if (isEditMode && examId && courses.length > 0 && selectedCourseId) {
-      // If selectedCourseId is already set from examData, check if it matches a course
-      const matchById = courses.find(c => c.id === selectedCourseId);
-      if (!matchById) {
-        // Try to match by title
-        const matchByTitle = courses.find(c => c.title.toLowerCase() === title.toLowerCase());
-        if (matchByTitle) {
-          setSelectedCourseId(matchByTitle.id);
-        }
-      }
+    const selectedCourse = allCourses.find(c => c.id === selectedCourseId);
+    if (selectedCourse && Array.isArray(selectedCourse.categories)) {
+      setCategories(selectedCourse.categories.map(name => ({ name })));
+    } else {
+      setCategories([]);
     }
-  }, [isEditMode, examId, courses, selectedCourseId, title]);
-
-  useEffect(() => {
-    const fetchCategories = async () => {
-      if (!selectedCourseId) {
-        setCategories([]);
-        return;
-      }
-
-      try {
-        const response = await axios.get(
-          `${import.meta.env.VITE_BACKEND_URL}/api/courses/${selectedCourseId}/categories`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`
-            }
-          }
-        );
-        
-        if (response.data && response.data.data && response.data.data.category) {
-          const formattedCategories = response.data.data.category.map((name: string) => ({
-            name
-          }));
-          setCategories(formattedCategories);
-        }
-      } catch (error) {
-        toast({
-          title: "Error",
-          description: "Failed to fetch categories. Please try again.",
-          variant: "destructive"
-        });
-      }
-    };
-
-    fetchCategories();
-  }, [selectedCourseId, token]);
+    if (selectedCourseId && !categoryFromUrl) {
+      setSelectedCategoryId("");
+    }
+  }, [selectedCourseId, allCourses]);
 
   useEffect(() => {
     const fetchQuestions = async () => {
@@ -601,6 +557,12 @@ const TeacherCreateExam = () => {
                           Has Video
                         </div>
                       )}
+                      {question.image && (
+                        <div className="flex items-center text-gray-600 text-xs sm:text-sm px-2 sm:px-3">
+                          <ImageIcon size={16} className="mr-1" />
+                          Has Image
+                        </div>
+                      )}
                       <Button
                         variant="ghost"
                         size="sm"
@@ -698,6 +660,7 @@ const TeacherCreateExam = () => {
                           Correct Answer: {getCorrectAnswerText(question)} | 
                           {question.hint && ' Has Hint |'} 
                           {question.video && ' Has Video'}
+                          {question.image && ' | Has Image'}
                         </p>
                       </div>
                       <Button

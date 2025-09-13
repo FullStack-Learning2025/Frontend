@@ -30,6 +30,8 @@ import axios from 'axios';
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarImage } from "@/components/ui/avatar";
+import defaultAvatar from "../../assets/default.jpg";
 import { useLanguage } from '@/contexts/LanguageContext';
 
 interface Lesson {
@@ -81,16 +83,11 @@ const TeacherDashboard = () => {
   const [exams, setExams] = useState<Exam[]>([]);
   const [blogs, setBlogs] = useState<Blog[]>([]);
   const [teachers, setTeachers] = useState([]);
+  const [recentUsers, setRecentUsers] = useState<any[]>([]);
   const [performanceData, setPerformanceData] = useState([]);
   const [timeRange, setTimeRange] = useState('week');
   const [stats, setStats] = useState<DashboardStats | null>(null);
-  const usersData = [
-    { id: 1, name: 'Jane Cooper', email: 'jane@example.com', date: '2023-05-04', status: 'Active' },
-    { id: 2, name: 'Wade Warren', email: 'wade@example.com', date: '2023-05-03', status: 'Active' },
-    { id: 3, name: 'Esther Howard', email: 'esther@example.com', date: '2023-05-02', status: 'Inactive' },
-    { id: 4, name: 'Cameron Williamson', email: 'cameron@example.com', date: '2023-05-01', status: 'Active' },
-    { id: 5, name: 'Brooklyn Simmons', email: 'brooklyn@example.com', date: '2023-04-30', status: 'Pending' },
-  ];
+  // recentUsers will be populated from /api/admin/students
   
   const teachersData = [
     { id: 1, name: 'Leslie Alexander', subject: 'Mathematics', date: '2023-05-04', rating: 4.8 },
@@ -145,7 +142,25 @@ const TeacherDashboard = () => {
           headers: { Authorization: `Bearer ${token}` }
         }
       );
-      setTeachers(teachersResponse.data);
+      {
+        const td = teachersResponse.data as any;
+        const list = Array.isArray(td)
+          ? td
+          : (Array.isArray(td?.data) ? td.data : (Array.isArray(td?.teachers) ? td.teachers : []));
+        setTeachers(list);
+      }
+
+      // Fetch recent users (students)
+      try {
+        const usersRes = await axios.get(
+          `${import.meta.env.VITE_BACKEND_URL}/api/admin/students`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        const list = Array.isArray(usersRes.data) ? usersRes.data : (Array.isArray(usersRes.data?.data) ? usersRes.data.data : []);
+        // Sort by created_at desc and take top 5
+        const sorted = [...list].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        setRecentUsers(sorted.slice(0, 5));
+      } catch {}
 
       // Fetch performance data based on time range
       const performanceResponse = await axios.get(
@@ -208,7 +223,9 @@ const TeacherDashboard = () => {
     columns, 
     viewAllLink = "#", 
     isLoading = false 
-  }) => (
+  }) => {
+    const rows = Array.isArray(data) ? data : (Array.isArray((data as any)?.data) ? (data as any).data : []);
+    return (
     <Card className="col-span-full">
       <CardHeader className="flex flex-row items-center justify-between pb-3">
         <CardTitle>{title}</CardTitle>
@@ -224,9 +241,9 @@ const TeacherDashboard = () => {
               <Skeleton key={i} className="h-12 w-full" />
             ))}
           </div>
-        ) : data.length === 0 ? (
+        ) : rows.length === 0 ? (
           <div className="p-4 text-center text-muted-foreground">
-            No {title.toLowerCase()} found
+          No {title.toLowerCase()} found
           </div>
         ) : (
           <Table>
@@ -238,7 +255,7 @@ const TeacherDashboard = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.slice(0, 5).map((row) => (
+              {rows.slice(0, 5).map((row) => (
                 <TableRow key={row.id}>
                   {columns.map((column) => (
                     <TableCell key={`${row.id}-${column.key}`}>
@@ -253,6 +270,7 @@ const TeacherDashboard = () => {
       </CardContent>
     </Card>
   );
+  };
 
   return (
     <div className="space-y-6">
@@ -374,23 +392,44 @@ const TeacherDashboard = () => {
       <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
         <DataTable 
           title={t.recentUsers} 
-          data={usersData} 
+          data={recentUsers} 
           viewAllLink="/admin/users"
           isLoading={loading}
           columns={[
-            { key: 'name', title: 'Name' },
+            { 
+              key: 'full_name', 
+              title: 'Name',
+              render: (row) => (
+                <div className="flex items-center gap-3">
+                  <Avatar className="h-8 w-8">
+                    {(() => {
+                      const src = (row.profile_image && String(row.profile_image).startsWith('http')) ? row.profile_image : defaultAvatar;
+                      return (
+                        <AvatarImage
+                          src={src}
+                          onError={(e) => { (e.currentTarget as HTMLImageElement).src = defaultAvatar; }}
+                        />
+                      );
+                    })()}
+                  </Avatar>
+                  <div>{row.full_name}</div>
+                </div>
+              )
+            },
             { key: 'email', title: 'Email' },
-            { key: 'date', title: 'Joined Date' },
+            { 
+              key: 'created_at', 
+              title: 'Joined Date',
+              render: (row) => new Date(row.created_at).toLocaleDateString()
+            },
             { 
               key: 'status', 
               title: 'Status',
               render: (row) => (
                 <span className={`px-2 py-1 text-xs rounded-full ${
-                  row.status === 'Active' ? 'bg-green-100 text-green-800' :
-                  row.status === 'Inactive' ? 'bg-red-100 text-red-800' :
-                  'bg-yellow-100 text-yellow-800'
+                  row.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
                 }`}>
-                  {row.status}
+                  {row.status === 'active' ? 'Active' : 'Inactive'}
                 </span>
               )
             }

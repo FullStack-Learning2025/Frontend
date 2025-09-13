@@ -14,15 +14,6 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   const { isAuthenticated, role, isLoading } = useAuth();
   const location = useLocation();
   
-  // Show loading spinner while checking authentication
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#7C3AED]"></div>
-      </div>
-    );
-  }
-
   // Redirect to appropriate dashboard if user is on root path
   useEffect(() => {
     if (isAuthenticated && location.pathname === '/') {
@@ -35,6 +26,15 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
       }
     }
   }, [isAuthenticated, location.pathname, role]);
+
+  // Show loading spinner while checking authentication
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#7C3AED]"></div>
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
     // Redirect to login if not authenticated

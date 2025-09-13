@@ -400,12 +400,6 @@ const TeacherLayout = () => {
           <DialogContent className="sm:max-w-[425px]">
             <DialogTitle className="flex items-center justify-between">
               Edit Profile
-              <button
-                onClick={() => setShowProfileModal(false)}
-                className="rounded-full p-1 hover:bg-gray-100"
-              >
-                <X className="h-4 w-4" />
-              </button>
             </DialogTitle>
             <form onSubmit={handleSubmit} className="space-y-4">
               {/* Profile Image Upload */}

@@ -25,6 +25,7 @@ interface Lesson {
 interface Course {
   id: string;
   title: string;
+  categories?: string[];
 }
 
 interface Category {
@@ -43,7 +44,9 @@ const CreateLesson = () => {
   const [selectedCourseId, setSelectedCourseId] = useState(courseIdFromUrl || "");
   const [selectedCategoryId, setSelectedCategoryId] = useState(categoryFromUrl || "");
   const [courses, setCourses] = useState<Course[]>([]);
+  const [allCourses, setAllCourses] = useState<Course[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const didFetchRef = useRef(false);
   const [videoDialogOpen, setVideoDialogOpen] = useState(false);
   const [activeLesson, setActiveLesson] = useState<Lesson | null>(null);
   const [lessons, setLessons] = useState<Lesson[]>([]);
@@ -103,6 +106,9 @@ const CreateLesson = () => {
 
   useEffect(() => {
     const fetchCourses = async () => {
+      if (didFetchRef.current) return;
+      didFetchRef.current = true;
+      
       setIsLoadingCourses(true);
       try {
         const response = await axios.get(
@@ -115,7 +121,9 @@ const CreateLesson = () => {
         );
         
         if (response.data && response.data.data) {
-          setCourses(response.data.data);
+          const coursesData = response.data.data;
+          setAllCourses(coursesData);
+          setCourses(coursesData);
         }
       } catch (error) {
         toast({
@@ -128,47 +136,22 @@ const CreateLesson = () => {
       }
     };
 
-    fetchCourses();
+    if (token) {
+      fetchCourses();
+    }
   }, [token]);
 
   useEffect(() => {
-    const fetchCategories = async () => {
-      if (!selectedCourseId) {
-        setCategories([]);
-        return;
-      }
-
-      setIsLoadingCategories(true);
-      try {
-        const response = await axios.get(
-          `${import.meta.env.VITE_BACKEND_URL}/api/courses/${selectedCourseId}/categories`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`
-            }
-          }
-        );
-        
-        if (response.data && response.data.data && response.data.data.category) {
-          const formattedCategories = response.data.data.category.map((name: string) => ({
-            name
-          }));
-
-          setCategories(formattedCategories);
-        }
-      } catch (error) {
-        toast({
-          title: "Error",
-          description: "Failed to fetch categories. Please try again.",
-          variant: "destructive"
-        });
-      } finally {
-        setIsLoadingCategories(false);
-      }
-    };
-
-    fetchCategories();
-  }, [selectedCourseId, token]);
+    const selectedCourse = allCourses.find(course => course.id === selectedCourseId);
+    if (selectedCourse && selectedCourse.categories) {
+      const courseCategories = selectedCourse.categories.map(cat => ({ name: cat }));
+      setCategories(courseCategories);
+    } else {
+      setCategories([]);
+    }
+    // Reset category selection when course changes
+    setSelectedCategoryId("");
+  }, [selectedCourseId, allCourses]);
 
   useEffect(() => {
     const fetchLessons = async () => {

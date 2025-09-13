@@ -4,11 +4,13 @@ import {
   LayoutDashboard,
   FileText,
   BookOpen,
+  TrendingUp,
   Menu,
   ChevronRight,
   LogOut,
   Globe,
-  X
+  X,
+  Upload
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
@@ -21,6 +23,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { toast } from "react-toastify";
+import PhoneInput from 'react-phone-input-2';
+import 'react-phone-input-2/lib/style.css';
 
 const StudentLayout = () => {
   const navigate = useNavigate();
@@ -29,6 +35,16 @@ const StudentLayout = () => {
   const { logout, token } = useAuth();
   const { t, language, setLanguage } = useLanguage();
   const [userProfile, setUserProfile] = useState<any>(null);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState({
+    display_name: '',
+    full_name: '',
+    contact_number: '',
+    profile_image: ''
+  });
+  const [imagePreview, setImagePreview] = useState('');
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   useEffect(() => {
     if (isMobile) setSidebarOpen(false);
@@ -46,6 +62,13 @@ const StudentLayout = () => {
         if (response.ok) {
           const data = await response.json();
           setUserProfile(data);
+          setForm({
+            display_name: data.display_name || '',
+            full_name: data.full_name || '',
+            contact_number: data.contact_number || '',
+            profile_image: data.profile_image || ''
+          });
+          setImagePreview(data.profile_image || '');
         }
       } catch (e) {
         // silent fail for header badge
@@ -55,6 +78,89 @@ const StudentLayout = () => {
     if (token) fetchUserProfile();
   }, [token]);
 
+  const uploadToBackend = async (file: File) => {
+    const data = new FormData();
+    data.append("file", file);
+
+    try {
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/storage/upload`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: data,
+      });
+
+      if (!response.ok) {
+        throw new Error('Upload failed');
+      }
+
+      const result = await response.json();
+      if (result.success && result.data.public_url) {
+        return result.data.public_url as string;
+      } else {
+        throw new Error("Upload failed: Invalid response");
+      }
+    } catch (error) {
+      console.error("Upload failed:", error);
+      throw new Error("Failed to upload image");
+    }
+  };
+
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please upload an image file');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image size should be less than 5MB');
+      return;
+    }
+
+    try {
+      setUploadingImage(true);
+      const url = await uploadToBackend(file);
+      setForm(prev => ({ ...prev, profile_image: url }));
+      setImagePreview(url);
+      toast.success('Image uploaded successfully');
+    } catch (error) {
+      toast.error('Failed to upload image');
+      console.error('Upload error:', error);
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/users/user-profile`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(form)
+      });
+      if (!response.ok) {
+        throw new Error('Failed to update profile');
+      }
+      const data = await response.json();
+      setUserProfile(data);
+      toast.success('Profile updated successfully');
+      setShowProfileModal(false);
+    } catch (error) {
+      toast.error('Failed to update profile');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleLogout = () => {
     logout();
     navigate('/login');
@@ -62,9 +168,12 @@ const StudentLayout = () => {
 
   const menuItems = [
     { title: t.dashboard, icon: <LayoutDashboard className="h-5 w-5" />, path: "/student/dashboard" },
-    { title: t.courses, icon: <BookOpen className="h-5 w-5" />, path: "/student/courses" },
-    { title: t.exams, icon: <FileText className="h-5 w-5" />, path: "/student/exams" },
+    { title: t.lessons, icon: <FileText className="h-5 w-5" />, path: "/student/lessons" },
+    { title: t.exams, icon: <BookOpen className="h-5 w-5" />, path: "/student/exams" },
+    { title: t.questions, icon: <FileText className="h-5 w-5" />, path: "/student/questions" },
     { title: t.blogs, icon: <FileText className="h-5 w-5" />, path: "/student/blogs" },
+    { title: 'Winning Question', icon: <FileText className="h-5 w-5" />, path: "/student/winningquestion" },
+    { title: 'Progress', icon: <TrendingUp className="h-5 w-5" />, path: "/student/progress" },
     { type: "divider" },
     { title: t.language, icon: <Globe className="h-5 w-5" />, isLanguageSelector: true },
     { title: t.logout, icon: <LogOut className="h-5 w-5" />, action: handleLogout },
@@ -145,7 +254,10 @@ const StudentLayout = () => {
               <span className="text-sm text-gray-700" role="presentation">
                 {userProfile?.display_name || 'Student'}
               </span>
-              <div className="h-8 w-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-700 font-medium overflow-hidden">
+              <button
+                onClick={() => setShowProfileModal(true)}
+                className="h-8 w-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-700 font-medium overflow-hidden"
+              >
                 {userProfile?.profile_image ? (
                   <img
                     src={userProfile.profile_image}
@@ -157,10 +269,109 @@ const StudentLayout = () => {
                     {(userProfile?.display_name?.[0] || 'S').toUpperCase()}
                   </span>
                 )}
-              </div>
+              </button>
             </div>
           </div>
         </header>
+
+        {/* Profile Edit Modal */}
+        <Dialog open={showProfileModal} onOpenChange={setShowProfileModal}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogTitle className="flex items-center justify-between">
+              Edit Profile
+            </DialogTitle>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="flex flex-col items-center gap-4">
+                <div className="relative w-24 h-24 rounded-full overflow-hidden bg-purple-100">
+                  {imagePreview ? (
+                    <img
+                      src={imagePreview}
+                      alt="Profile"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-purple-700 text-2xl font-bold">
+                      {form.display_name?.[0]?.toUpperCase() || 'S'}
+                    </div>
+                  )}
+                  <label
+                    className="absolute bottom-0 right-[35%] p-1 bg-purple-600 rounded-full cursor-pointer hover:bg-purple-700 transition-colors"
+                    htmlFor="profile-image"
+                  >
+                    <Upload className="h-4 w-4 text-white" />
+                  </label>
+                  <input
+                    type="file"
+                    id="profile-image"
+                    accept="image/*"
+                    onChange={handleImageChange}
+                    className="hidden"
+                  />
+                </div>
+                {uploadingImage && <p className="text-sm text-purple-600">Uploading image...</p>}
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Display Name
+                  </label>
+                  <input
+                    type="text"
+                    value={form.display_name}
+                    onChange={(e) => setForm(prev => ({ ...prev, display_name: e.target.value }))}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Full Name
+                  </label>
+                  <input
+                    type="text"
+                    value={form.full_name}
+                    onChange={(e) => setForm(prev => ({ ...prev, full_name: e.target.value }))}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Contact Number
+                  </label>
+                  <PhoneInput
+                    country={'us'}
+                    value={form.contact_number}
+                    onChange={(value) => setForm(prev => ({ ...prev, contact_number: value }))}
+                    inputClass="!w-full !rounded-lg !border !border-gray-300 !px-3 !py-2 !focus:outline-none !focus:border-purple-500"
+                    inputStyle={{ width: '100%' }}
+                    specialLabel=""
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowProfileModal(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading || uploadingImage}
+                  className={cn(
+                    "px-4 py-2 text-sm font-medium text-white bg-purple-600 rounded-lg",
+                    "hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2",
+                    (loading || uploadingImage) && "opacity-50 cursor-not-allowed"
+                  )}
+                >
+                  {loading ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
 
         <main className="p-2 sm:p-4 lg:p-6 w-full overflow-y-auto" style={{ height: "calc(100vh - 3.5rem)" }}>
           <Outlet />

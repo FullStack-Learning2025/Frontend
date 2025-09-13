@@ -36,11 +36,18 @@ interface UserPerformanceChartProps {
 const UserPerformanceChart: React.FC<UserPerformanceChartProps> = ({ data }) => {
   // If data is provided in weekly_progress format, map it to chart format
   let chartData: ChartData[] = defaultData;
-  if (data && data.length > 0 && data[0].date && typeof data[0].activity_count === "number") {
-    chartData = data.map((item) => ({
-      day: item.date,
-      activity: item.activity_count,
-    }));
+  if (data && data.length > 0 && (data[0] as any).date && typeof (data[0] as any).activity_count === "number") {
+    chartData = (data as any[]).map((item: any) => {
+      // Resolve performance and attendance with sensible fallbacks
+      const perfRaw = item.performance ?? item.performance_score ?? item.avg_score ?? 0;
+      const attendRaw = item.attendance ?? item.attendance_count ?? item.attended ?? 0;
+      return {
+        day: item.date,
+        activity: item.activity_count,
+        performance: typeof perfRaw === 'number' ? perfRaw : Number(perfRaw) || 0,
+        attendance: typeof attendRaw === 'number' ? attendRaw : Number(attendRaw) || 0,
+      } as ChartData;
+    });
   } else if (data) {
     chartData = data;
   }

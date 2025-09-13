@@ -24,6 +24,10 @@ const CreateCourse = () => {
   const [description, setDescription] = useState("");
   const [categories, setCategories] = useState<Category[]>([]);
   const [newCategory, setNewCategory] = useState("");
+  const [rules, setRules] = useState<string[]>([]);
+  const [newRule, setNewRule] = useState("");
+  const [notes, setNotes] = useState<string[]>([]);
+  const [newNote, setNewNote] = useState("");
   const [coverImage, setCoverImage] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -32,12 +36,37 @@ const CreateCourse = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+  const didFetchRef = useRef(false);
+  const lastFetchedIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (isEditMode && courseId) {
+      // Avoid duplicate fetches (e.g., React StrictMode) and only fetch once per courseId
+      if (didFetchRef.current && lastFetchedIdRef.current === courseId) return;
+      didFetchRef.current = true;
+      lastFetchedIdRef.current = courseId;
       fetchCourseData();
+    } else {
+      // Reset guard if leaving edit mode
+      didFetchRef.current = false;
+      lastFetchedIdRef.current = null;
     }
   }, [courseId, isEditMode]);
+
+  // Reset form to initial state for creating a new course
+  const resetForm = () => {
+    setCourseId(null);
+    setTitle("");
+    setDescription("");
+    setCategories([]);
+    setNewCategory("");
+    setRules([]);
+    setNewRule("");
+    setNotes([]);
+    setNewNote("");
+    setCoverImage("");
+    setCourseStatus("draft");
+  };
 
   const fetchCourseData = async () => {
     if (courseId) {
@@ -58,13 +87,58 @@ const CreateCourse = () => {
         setCoverImage(courseData.cover_image);
         setCourseStatus(courseData.status || "draft");
         
-        // Transform categories into the required format
-        if (courseData.category && Array.isArray(courseData.category)) {
-          const formattedCategories = courseData.category.map(cat => ({
-            name: cat
-          }));
-          setCategories(formattedCategories);
+        // Prefer new nested arrays from backend. Support arrays of strings or objects with 'name'.
+        const parseStringArray = (val: unknown): string[] => {
+          if (Array.isArray(val)) {
+            // array of strings or objects with 'name'
+            return (val as any[])
+              .map((x) => (typeof x === 'string' ? x : (x && typeof x.name === 'string' ? x.name : '')))
+              .map((s) => String(s))
+              .map((s) => s.trim())
+              .filter(Boolean);
+          }
+          if (typeof val === 'string') {
+            const s = val.trim();
+            try {
+              if (s.startsWith('[') && s.endsWith(']')) {
+                const arr = JSON.parse(s);
+                if (Array.isArray(arr)) {
+                  return arr
+                    .map((x: any) => (typeof x === 'string' ? x : (x && typeof x.name === 'string' ? x.name : '')))
+                    .map((v: any) => String(v).trim())
+                    .filter(Boolean);
+                }
+              }
+            } catch {}
+            return s.split(',').map((x) => x.replace(/^[\[\s\"]+|[\]\s\"]+$/g, '').trim()).filter(Boolean);
+          }
+          return [];
+        };
+
+        let cats = parseStringArray(courseData.categories ?? courseData.category);
+        let rulesArr = parseStringArray(courseData.rules);
+        let notesArr = parseStringArray(courseData.notes);
+
+        // If detail endpoint doesn't include these, try to enrich from the courses list
+        if ((!cats || cats.length === 0) || (!rulesArr || rulesArr.length === 0) || (!notesArr || notesArr.length === 0)) {
+          try {
+            const listRes = await axios.get(
+              `${import.meta.env.VITE_BACKEND_URL}/api/courses`,
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+            const listData = Array.isArray(listRes.data?.data) ? listRes.data.data : listRes.data;
+            const match = Array.isArray(listData) ? listData.find((c: any) => c.id === courseId) : null;
+            if (match) {
+              if (!cats || cats.length === 0) cats = parseStringArray(match.categories ?? match.category);
+              if (!rulesArr || rulesArr.length === 0) rulesArr = parseStringArray(match.rules);
+              if (!notesArr || notesArr.length === 0) notesArr = parseStringArray(match.notes);
+            }
+          } catch {}
         }
+
+        setCategories((cats || []).map((cat: string) => ({ name: cat })));
+        setRules(rulesArr || []);
+        setNotes(notesArr || []);
       } catch (error) {
         toast({
           title: "Error",
@@ -96,6 +170,36 @@ const CreateCourse = () => {
 
   const handleRemoveCategory = (categoryToRemove: string) => {
     setCategories(categories.filter(cat => cat.name !== categoryToRemove));
+  };
+
+  // Handlers: Rules
+  const handleAddRule = () => {
+    if (!newRule.trim()) return;
+    const value = newRule.trim();
+    if (rules.some(r => r.toLowerCase() === value.toLowerCase())) {
+      toast({ title: "Error", description: "This rule already exists.", variant: "destructive" });
+      return;
+    }
+    setRules([...rules, value]);
+    setNewRule("");
+  };
+  const handleRemoveRule = (ruleToRemove: string) => {
+    setRules(rules.filter(r => r !== ruleToRemove));
+  };
+
+  // Handlers: Notes
+  const handleAddNote = () => {
+    if (!newNote.trim()) return;
+    const value = newNote.trim();
+    if (notes.some(n => n.toLowerCase() === value.toLowerCase())) {
+      toast({ title: "Error", description: "This note already exists.", variant: "destructive" });
+      return;
+    }
+    setNotes([...notes, value]);
+    setNewNote("");
+  };
+  const handleRemoveNote = (noteToRemove: string) => {
+    setNotes(notes.filter(n => n !== noteToRemove));
   };
 
   const uploadToBackend = async (file: File) => {
@@ -171,7 +275,9 @@ const CreateCourse = () => {
         description,
         cover_image: coverImage,
         status: courseStatus,
-        category: categories.map(cat => cat.name)
+        category: categories.map(cat => cat.name),
+        rules,
+        notes,
       };
 
       if (courseId) {
@@ -187,11 +293,9 @@ const CreateCourse = () => {
           courseData,
           { headers: { Authorization: `Bearer ${token}` } }
         );
-        setCourseId(response.data.data.id);
-        // Update URL without navigation
-        const newUrl = `${window.location.pathname}?type=edit&id=${response.data.data.id}`;
-        window.history.pushState({}, '', newUrl);
-        toast({ title: "Success", description: "Course has been created successfully! You can now continue editing." });
+        // On successful creation, reset the form so user can add a new course
+        toast({ title: "Success", description: response?.data?.message || "Course has been created successfully!" });
+        resetForm();
       }
     } catch (error) {
       toast({ title: "Error", description: "Failed to save course. Please try again.", variant: "destructive" });
@@ -323,6 +427,68 @@ const CreateCourse = () => {
                       variant="outline"
                       className="shrink-0"
                     >
+                      <Plus size={16} className="mr-1" /> Add
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Rules */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Rules
+                  </label>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {rules.map((rule) => (
+                      <div key={rule} className="bg-gray-100 rounded-full px-3 py-1 flex items-center gap-1">
+                        <span className="text-sm">{rule}</span>
+                        <button onClick={() => handleRemoveRule(rule)} className="text-gray-500 hover:text-red-500">
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Add a rule"
+                      value={newRule}
+                      onChange={(e) => setNewRule(e.target.value)}
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); handleAddRule(); }
+                      }}
+                      className="text-sm"
+                    />
+                    <Button onClick={handleAddRule} variant="outline" className="shrink-0">
+                      <Plus size={16} className="mr-1" /> Add
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Notes
+                  </label>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {notes.map((note) => (
+                      <div key={note} className="bg-gray-100 rounded-full px-3 py-1 flex items-center gap-1">
+                        <span className="text-sm">{note}</span>
+                        <button onClick={() => handleRemoveNote(note)} className="text-gray-500 hover:text-red-500">
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Add a note"
+                      value={newNote}
+                      onChange={(e) => setNewNote(e.target.value)}
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); handleAddNote(); }
+                      }}
+                      className="text-sm"
+                    />
+                    <Button onClick={handleAddNote} variant="outline" className="shrink-0">
                       <Plus size={16} className="mr-1" /> Add
                     </Button>
                   </div>

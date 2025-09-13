@@ -26,11 +26,16 @@ interface Question {
   videoUrl?: string;
   imageUrl?: string;
   isNew?: boolean;
+  rules?: string[];
+  notes?: string[];
 }
 
 interface Course {
   id: string;
   title: string;
+  categories?: string[];
+  rules?: string[];
+  notes?: string[];
 }
 
 interface Category {
@@ -49,7 +54,11 @@ const CreateQuestion = () => {
   const [selectedCourseId, setSelectedCourseId] = useState(courseIdFromUrl || "");
   const [selectedCategoryId, setSelectedCategoryId] = useState(categoryFromUrl || "");
   const [courses, setCourses] = useState<Course[]>([]);
+  const [allCourses, setAllCourses] = useState<Course[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [courseRules, setCourseRules] = useState<string[]>([]);
+  const [courseNotes, setCourseNotes] = useState<string[]>([]);
+  const didFetchRef = useRef(false);
   const [questions, setQuestions] = useState<Question[]>([
     {
       id: "1",
@@ -76,10 +85,50 @@ const CreateQuestion = () => {
   const [imageUrl, setImageUrl] = useState("");
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
+  // Filters
+  const [filterIncomplete, setFilterIncomplete] = useState(false);
+  const [filterMissingRules, setFilterMissingRules] = useState(false);
 
-  // Additional UI state
+  // Additional UI state (dialogs)
   const [selectedRule, setSelectedRule] = useState("");
   const [noteText, setNoteText] = useState("");
+  // Per-question dropdown open state and refs
+  const [openRulesId, setOpenRulesId] = useState<string | null>(null);
+  const [openNotesId, setOpenNotesId] = useState<string | null>(null);
+  const rulesDropdownRef = useRef<HTMLDivElement | null>(null);
+  const notesDropdownRef = useRef<HTMLDivElement | null>(null);
+  // Per-question Rules/Notes toggles
+  const toggleQuestionRule = (qid: string, rule: string) => {
+    setQuestions(prev => prev.map(q => {
+      if (q.id !== qid) return q;
+      const current = q.rules || [];
+      const next = current.includes(rule) ? current.filter(r => r !== rule) : [...current, rule];
+      return { ...q, rules: next };
+    }));
+  };
+  const toggleQuestionNote = (qid: string, note: string) => {
+    setQuestions(prev => prev.map(q => {
+      if (q.id !== qid) return q;
+      const current = q.notes || [];
+      const next = current.includes(note) ? current.filter(n => n !== note) : [...current, note];
+      return { ...q, notes: next };
+    }));
+  };
+
+  // Close currently open dropdowns on outside click
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (openRulesId && rulesDropdownRef.current && !rulesDropdownRef.current.contains(t)) {
+        setOpenRulesId(null);
+      }
+      if (openNotesId && notesDropdownRef.current && !notesDropdownRef.current.contains(t)) {
+        setOpenNotesId(null);
+      }
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [openRulesId, openNotesId]);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -101,6 +150,9 @@ const CreateQuestion = () => {
   // Fetch courses on component mount
   useEffect(() => {
     const fetchCourses = async () => {
+      if (didFetchRef.current) return;
+      didFetchRef.current = true;
+      
       setIsLoadingCourses(true);
       try {
         const response = await axios.get(
@@ -113,7 +165,9 @@ const CreateQuestion = () => {
         );
         
         if (response.data && response.data.data) {
-          setCourses(response.data.data);
+          const coursesData = response.data.data;
+          setAllCourses(coursesData);
+          setCourses(coursesData);
         }
       } catch (error) {
         toast({
@@ -126,48 +180,40 @@ const CreateQuestion = () => {
       }
     };
 
-    fetchCourses();
+    if (token) {
+      fetchCourses();
+    }
   }, [token]);
 
-  // Fetch categories when course is selected
+  // When course is selected, populate categories, rules, notes from titles response
   useEffect(() => {
-    const fetchCategories = async () => {
-      if (!selectedCourseId) {
-        setCategories([]);
-        return;
-      }
+    const selectedCourse = allCourses.find(course => course.id === selectedCourseId);
 
-      setIsLoadingCategories(true);
-      try {
-        const response = await axios.get(
-          `${import.meta.env.VITE_BACKEND_URL}/api/courses/${selectedCourseId}/categories`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`
-            }
-          }
-        );
-        
-        if (response.data && response.data.data && response.data.data.category) {
-          const formattedCategories = response.data.data.category.map((name: string) => ({
-            name
-          }));
+    if (selectedCourse?.categories?.length) {
+      setCategories(selectedCourse.categories.map(cat => ({ name: cat })));
+    } else {
+      setCategories([]);
+    }
 
-          setCategories(formattedCategories);
-        }
-      } catch (error) {
-        toast({
-          title: "Error",
-          description: "Failed to fetch categories. Please try again.",
-          variant: "destructive"
-        });
-      } finally {
-        setIsLoadingCategories(false);
-      }
-    };
+    if (selectedCourse?.rules?.length) {
+      setCourseRules(selectedCourse.rules);
+    } else {
+      setCourseRules([]);
+    }
 
-    fetchCategories();
-  }, [selectedCourseId, token]);
+    if (selectedCourse?.notes?.length) {
+      setCourseNotes(selectedCourse.notes);
+    } else {
+      setCourseNotes([]);
+    }
+
+    // Reset dependent selections when course changes (but not on initial load via URL)
+    if (selectedCourseId && !categoryFromUrl) {
+      setSelectedCategoryId("");
+      setSelectedRule("");
+      setNoteText("");
+    }
+  }, [selectedCourseId, allCourses]);
 
   // Fetch questions when both course and category are selected
   useEffect(() => {
@@ -178,8 +224,10 @@ const CreateQuestion = () => {
 
       setIsLoadingQuestions(true);
       try {
+        const noAnswersParam = filterIncomplete ? "&noAnswers=true" : "";
+        const noRulesParam = filterMissingRules ? "&noRules=true" : "";
         const response = await axios.get(
-          `${import.meta.env.VITE_BACKEND_URL}/api/questions/courses/${selectedCourseId}/questions?category=${selectedCategoryId}&only=current`,
+          `${import.meta.env.VITE_BACKEND_URL}/api/questions/courses/${selectedCourseId}/questions?category=${selectedCategoryId}&only=current${noAnswersParam}${noRulesParam}`,
           {
             headers: {
               Authorization: `Bearer ${token}`
@@ -192,15 +240,13 @@ const CreateQuestion = () => {
             // Handle options as array or object
             let choices;
             if (Array.isArray(q.options)) {
-              // If options is an array, map it to choices with A, B, C, D keys
               choices = q.options.map((option: string, optIndex: number) => ({
                 id: `c${optIndex + 1}`,
-                key: String.fromCharCode(65 + optIndex), // A, B, C, D
+                key: String.fromCharCode(65 + optIndex),
                 text: option,
                 isCorrect: q.correct === String.fromCharCode(65 + optIndex)
               }));
             } else {
-              // If options is an object, use Object.entries
               choices = Object.entries(q.options).map(([key, value]: [string, any], optIndex: number) => ({
                 id: `c${optIndex + 1}`,
                 key,
@@ -216,14 +262,15 @@ const CreateQuestion = () => {
               hint: q.hint || "",
               videoUrl: q.video || "",
               imageUrl: q.image || "",
+              rules: Array.isArray(q.rules) ? q.rules : [],
+              notes: Array.isArray(q.notes) ? q.notes : [],
               isNew: false
-            };
+            } as Question;
           });
 
           setQuestions(formattedQuestions);
-          // snapshot originals for change detection
           originalQuestionsRef.current = formattedQuestions.map(q => ({ ...q, choices: q.choices.map(c => ({ ...c })) }));
-          setCurrentPage(1); // Reset to first page when new questions are loaded
+          setCurrentPage(1);
         }
       } catch (error) {
         console.log(error);
@@ -238,7 +285,7 @@ const CreateQuestion = () => {
     };
 
     fetchQuestions();
-  }, [selectedCourseId, selectedCategoryId, token]);
+  }, [selectedCourseId, selectedCategoryId, token, filterIncomplete, filterMissingRules]);
 
   // Fetch single question in edit mode
   useEffect(() => {
@@ -284,6 +331,8 @@ const CreateQuestion = () => {
               hint: questionData.hint || "",
               videoUrl: questionData.video || "",
               imageUrl: questionData.image || "",
+              rules: Array.isArray(questionData.rules) ? questionData.rules : [],
+              notes: Array.isArray(questionData.notes) ? questionData.notes : [],
               isNew: false
             };
             
@@ -570,7 +619,9 @@ const CreateQuestion = () => {
           correct: correctAnswer,
           hint: question.hint || "",
           video: question.videoUrl || "",
-          image: question.imageUrl || ""
+          image: question.imageUrl || "",
+          rules: question.rules || [],
+          notes: question.notes || []
         };
 
         const isExistingQuestion = !question.isNew;
@@ -580,7 +631,9 @@ const CreateQuestion = () => {
           const original = originalQuestionsRef.current.find(q => q.id === question.id);
           if (original) {
             const changed = JSON.stringify(normalizeQuestion(question)) !== JSON.stringify(normalizeQuestion(original));
-            if (!changed) continue;
+            const metaChanged = JSON.stringify(question.rules || []) !== JSON.stringify((original as any).rules || []) ||
+                               JSON.stringify(question.notes || []) !== JSON.stringify((original as any).notes || []);
+            if (!changed && !metaChanged) continue;
           }
 
           await axios.put(
@@ -610,8 +663,24 @@ const CreateQuestion = () => {
         description: "Questions saved successfully!",
       });
 
-      // Update snapshot to reflect current saved state
-      originalQuestionsRef.current = questions.map(q => ({ ...q, choices: q.choices.map(c => ({ ...c })) }));
+      // Reset questions to a fresh blank state after save
+      const blank = {
+        id: "1",
+        text: "",
+        choices: [
+          { id: "c1", key: "A", text: "", isCorrect: false },
+          { id: "c2", key: "B", text: "", isCorrect: false },
+          { id: "c3", key: "C", text: "", isCorrect: false },
+          { id: "c4", key: "D", text: "", isCorrect: false }
+        ],
+        hint: "",
+        videoUrl: "",
+        imageUrl: "",
+        isNew: true
+      } as Question;
+      setQuestions([blank]);
+      originalQuestionsRef.current = [{ ...blank, choices: blank.choices.map(c => ({ ...c })) }];
+      setCurrentPage(1);
     } catch (error) {
       console.log(error);
       toast({
@@ -714,7 +783,7 @@ const CreateQuestion = () => {
 
   return (
     <div className="max-w-full mx-auto py-4 sm:py-6 px-3 sm:px-4">
-      <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+      <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 sticky top-0 z-30 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 border-b px-2 sm:px-4 py-2">
         <div className="flex items-center gap-4">
           <Button 
             variant="ghost"
@@ -727,13 +796,44 @@ const CreateQuestion = () => {
             {isEditMode ? 'Edit Question' : 'Create Question'}
           </h1>
         </div>
-        <Button 
-          onClick={handleSave} 
-          className="bg-primary hover:bg-primary-600 text-sm sm:text-base"
-          disabled={!showQuestionSection || questions.length === 0}
-        >
-          {isEditMode ? 'Update Question' : 'Create Question'}
-        </Button>
+        <div className="flex items-center gap-3">
+          {/* Filters */}
+          <div className="flex items-center gap-4">
+            <label className="inline-flex items-center gap-2 text-sm text-gray-700 select-none">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                checked={filterIncomplete}
+                onChange={(e) => setFilterIncomplete(e.target.checked)}
+              />
+              Incomplete Questions
+            </label>
+            <label className="inline-flex items-center gap-2 text-sm text-gray-700 select-none">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                checked={filterMissingRules}
+                onChange={(e) => setFilterMissingRules(e.target.checked)}
+              />
+              Missing Rules
+            </label>
+          </div>
+          <Button 
+            onClick={addNewQuestion}
+            variant="outline"
+            className="text-sm sm:text-base"
+            disabled={!showQuestionSection}
+          >
+            <Plus size={16} className="mr-2" /> Add Question
+          </Button>
+          <Button 
+            onClick={handleSave} 
+            className="bg-primary hover:bg-primary-600 text-sm sm:text-base"
+            disabled={!showQuestionSection || questions.length === 0}
+          >
+            {isEditMode ? 'Update Question' : 'Create Question'}
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
@@ -775,24 +875,6 @@ const CreateQuestion = () => {
             ))}
           </select>
 
-          {/* Select Rule dropdown */}
-          <div className="mt-4">
-            <label htmlFor="rule" className="block text-sm font-medium text-gray-700 mb-1">
-              Select Rule
-            </label>
-            <select
-              id="rule"
-              value={selectedRule}
-              onChange={(e) => setSelectedRule(e.target.value)}
-              className={cn(
-                "w-full p-2 border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-primary text-sm sm:text-base"
-              )}
-            >
-              <option value="">Select a rule</option>
-              <option value="rule1">Rule 1</option>
-              <option value="rule2">Rule 2</option>
-            </select>
-          </div>
         </div>
 
         <div>
@@ -833,19 +915,7 @@ const CreateQuestion = () => {
             ))}
           </select>
 
-          {/* Add Note input */}
-          <div className="mt-4">
-            <label htmlFor="note" className="block text-sm font-medium text-gray-700 mb-1">
-              Add Note
-            </label>
-            <Input
-              id="note"
-              value={noteText}
-              onChange={(e) => setNoteText(e.target.value)}
-              placeholder="Enter a note"
-              className="w-full"
-            />
-          </div>
+          
         </div>
       </div>
 
@@ -860,13 +930,13 @@ const CreateQuestion = () => {
                 </span>
               )}
             </div>
-            <Button 
+            {/* <Button 
               onClick={addNewQuestion}
               variant="outline"
               className="flex items-center gap-2 text-sm sm:text-base"
             >
               <Plus size={16} /> Add Question
-            </Button>
+            </Button> */}
           </div>
 
           <div className="space-y-4 sm:space-y-6">
@@ -936,26 +1006,108 @@ const CreateQuestion = () => {
                         <div key={choice.id} className="flex items-center gap-2 sm:gap-4">
                           <div 
                             className={`h-5 w-5 sm:h-6 sm:w-6 rounded-full border-2 flex items-center justify-center cursor-pointer ${
-                              choice.isCorrect 
-                                ? 'border-primary bg-primary text-white' 
-                                : 'border-gray-300 hover:border-primary'
+                              choice.isCorrect ? 'border-primary bg-primary text-white' : 'border-gray-300'
                             }`}
                             onClick={() => handleCorrectAnswerChange(question.id, choice.id)}
                           >
-                            {choice.isCorrect && <Check size={12} className="sm:hidden" />}
-                            {choice.isCorrect && <Check size={14} className="hidden sm:block" />}
+                            {choice.isCorrect && <Check size={14} />}
                           </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium text-gray-600 w-6">{choice.key}.</span>
-                            <Input
-                              placeholder="Enter choice text"
-                              value={choice.text}
-                              onChange={(e) => handleChoiceChange(question.id, choice.id, e.target.value)}
-                              className={`flex-1 text-sm sm:text-base ${choice.isCorrect ? 'border-primary' : ''}`}
-                            />
-                          </div>
+                          <Input
+                            value={choice.text}
+                            onChange={(e) => handleChoiceChange(question.id, choice.id, e.target.value)}
+                            placeholder={`Option ${choice.key}`}
+                            className="flex-1"
+                          />
                         </div>
                       ))}
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      {/* Per-question Rules - dropdown */}
+                      <div className="flex-1">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Select Rule(s)</label>
+                        <div className="relative" ref={openRulesId === question.id ? rulesDropdownRef : null}>
+                          <button
+                            type="button"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white text-left text-sm hover:border-purple-400 focus:outline-none focus:ring-2 focus:ring-primary"
+                            onClick={() => setOpenRulesId(prev => prev === question.id ? null : question.id)}
+                          >
+                            {(question.rules || []).length > 0 ? `${(question.rules || []).length} rule(s) selected` : 'Select rules'}
+                          </button>
+                          {openRulesId === question.id && (
+                            <div className="absolute bottom-full mb-2 w-full bg-white border border-gray-200 rounded-lg shadow-lg p-2 max-h-60 overflow-auto z-50">
+                              {courseRules.length === 0 ? (
+                                <p className="text-sm text-gray-500 px-2 py-1">No rules available</p>
+                              ) : (
+                                courseRules.map(rule => (
+                                  <label key={rule} className="flex items-center gap-2 px-2 py-2 hover:bg-gray-50 rounded-md cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                                      checked={(question.rules || []).includes(rule)}
+                                      onChange={() => toggleQuestionRule(question.id, rule)}
+                                    />
+                                    <span className="text-sm text-gray-700">{rule}</span>
+                                  </label>
+                                ))
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        {(question.rules || []).length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {(question.rules || []).map(r => (
+                              <span key={`r-${r}`} className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-purple-50 text-purple-700 px-3 py-1 text-xs">
+                                {r}
+                                <button type="button" className="text-purple-600 hover:text-purple-800" onClick={() => toggleQuestionRule(question.id, r)}>×</button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Per-question Notes - dropdown */}
+                      <div className="flex-1">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Select Note(s)</label>
+                        <div className="relative" ref={openNotesId === question.id ? notesDropdownRef : null}>
+                          <button
+                            type="button"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white text-left text-sm hover:border-purple-400 focus:outline-none focus:ring-2 focus:ring-primary"
+                            onClick={() => setOpenNotesId(prev => prev === question.id ? null : question.id)}
+                          >
+                            {(question.notes || []).length > 0 ? `${(question.notes || []).length} note(s) selected` : 'Select notes'}
+                          </button>
+                          {openNotesId === question.id && (
+                            <div className="absolute bottom-full mb-2 w-full bg-white border border-gray-200 rounded-lg shadow-lg p-2 max-h-60 overflow-auto z-50">
+                              {courseNotes.length === 0 ? (
+                                <p className="text-sm text-gray-500 px-2 py-1">No notes available</p>
+                              ) : (
+                                courseNotes.map(note => (
+                                  <label key={note} className="flex items-center gap-2 px-2 py-2 hover:bg-gray-50 rounded-md cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                                      checked={(question.notes || []).includes(note)}
+                                      onChange={() => toggleQuestionNote(question.id, note)}
+                                    />
+                                    <span className="text-sm text-gray-700">{note}</span>
+                                  </label>
+                                ))
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        {(question.notes || []).length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {(question.notes || []).map(n => (
+                              <span key={`n-${n}`} className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 text-indigo-700 px-3 py-1 text-xs">
+                                {n}
+                                <button type="button" className="text-indigo-600 hover:text-indigo-800" onClick={() => toggleQuestionNote(question.id, n)}>×</button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     {question.hint && (
