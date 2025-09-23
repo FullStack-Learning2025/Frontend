@@ -27,13 +27,15 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "react-toastify";
 import PhoneInput from 'react-phone-input-2';
 import 'react-phone-input-2/lib/style.css';
+import { StudentSessionProvider, useStudentSession } from '@/contexts/StudentSessionContext';
 
-const StudentLayout = () => {
+const StudentLayoutInner = () => {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const { logout, token } = useAuth();
   const { t, language, setLanguage } = useLanguage();
+  const { currentCourse, currentExam } = useStudentSession();
   const [userProfile, setUserProfile] = useState<any>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -168,9 +170,15 @@ const StudentLayout = () => {
 
   const menuItems = [
     { title: t.dashboard, icon: <LayoutDashboard className="h-5 w-5" />, path: "/student/dashboard" },
-    { title: t.lessons, icon: <FileText className="h-5 w-5" />, path: "/student/lessons" },
-    { title: t.exams, icon: <BookOpen className="h-5 w-5" />, path: "/student/exams" },
-    { title: t.questions, icon: <FileText className="h-5 w-5" />, path: "/student/questions" },
+    // Only show Lessons and Exams after a course is selected in the session
+    ...(currentCourse ? [
+      { title: t.lessons, icon: <FileText className="h-5 w-5" />, path: "/student/lessons" },
+      { title: t.exams, icon: <BookOpen className="h-5 w-5" />, path: "/student/exams" },
+    ] : []),
+    // Questions visible only when an exam is selected
+    ...(currentExam ? [
+      { title: t.questions, icon: <FileText className="h-5 w-5" />, path: "/student/questions" },
+    ] : []),
     { title: t.blogs, icon: <FileText className="h-5 w-5" />, path: "/student/blogs" },
     { title: 'Winning Question', icon: <FileText className="h-5 w-5" />, path: "/student/winningquestion" },
     { title: 'Progress', icon: <TrendingUp className="h-5 w-5" />, path: "/student/progress" },
@@ -251,6 +259,12 @@ const StudentLayout = () => {
               {sidebarOpen ? <ChevronRight className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
             <div className="flex items-center space-x-2">
+              {currentCourse && (
+                <span className="hidden sm:inline-flex max-w-[40vw] md:max-w-[28rem] items-center gap-2 text-xs sm:text-sm text-purple-800 bg-purple-50 border border-purple-200 rounded-full px-2.5 py-1 truncate" title={currentCourse.courseTitle}>
+                  <span className="font-medium">Course:</span>
+                  <span className="truncate">{currentCourse.courseTitle}</span>
+                </span>
+              )}
               <span className="text-sm text-gray-700" role="presentation">
                 {userProfile?.display_name || 'Student'}
               </span>
@@ -380,5 +394,11 @@ const StudentLayout = () => {
     </div>
   );
 };
+
+const StudentLayout = () => (
+  <StudentSessionProvider>
+    <StudentLayoutInner />
+  </StudentSessionProvider>
+);
 
 export default StudentLayout;

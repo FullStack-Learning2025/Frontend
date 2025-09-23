@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useStudentSession } from '@/contexts/StudentSessionContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -42,6 +44,8 @@ const examStatusKey = (examId: string) => `exam_status_${examId}`;
 const StudentExams: React.FC = () => {
   const { token } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
+  const { clearExam } = useStudentSession();
 
   // Selections
   const [exams, setExams] = useState<ExamTitle[]>([]);
@@ -125,14 +129,7 @@ const StudentExams: React.FC = () => {
   // Flag to re-enter fullscreen on next user click if ESC was pressed
   const [needsFsReentry, setNeedsFsReentry] = useState<boolean>(false);
   const [resultMeta, setResultMeta] = useState<{ obtained?: number | null; total?: number | null } | null>(null);
-  // Student level (for target details). Try to read from storage; default Beginner
-  const [studentLevel, setStudentLevel] = useState<'Beginner' | 'Intermediate' | 'Pro' | 'Master'>('Beginner');
-  useEffect(() => {
-    try {
-      const lvl = localStorage.getItem('student_level');
-      if (lvl === 'Intermediate' || lvl === 'Pro' || lvl === 'Master' || lvl === 'Beginner') setStudentLevel(lvl);
-    } catch {}
-  }, []);
+  // Removed student level feature
   
   // Helpers to read/write global exam status
   const getExamStatus = (examId: string): { completed?: boolean; dismissed?: boolean; lastResult?: any } | null => {
@@ -295,6 +292,9 @@ const StudentExams: React.FC = () => {
     setSubmitted(false);
     setRemainingSec(null);
     setInitialRemainingSec(null);
+    // Clear session exam so Questions tab hides, and navigate back to Exams
+    try { clearExam(); } catch {}
+    navigate('/student/exams');
   };
 
   // Helper: update localStorage exams list to reflect attempted + percentage
@@ -1880,42 +1880,7 @@ const StudentExams: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Target details */}
-                  <div className="w-full max-w-xl rounded-xl border border-purple-200 bg-white shadow-lg">
-                    <div className="px-4 py-3 border-b border-purple-200 bg-purple-50 rounded-t-xl">
-                      <div className="text-sm sm:text-base font-semibold text-purple-800">Target Details</div>
-                      <div className="text-[11px] sm:text-xs text-purple-700">Your roadmap to the next level</div>
-                    </div>
-                    <div className="px-4 py-3 text-xs sm:text-sm text-gray-700 space-y-2">
-                      {studentLevel === 'Beginner' && (
-                        <div className="flex items-start gap-2"><span className="mt-1 h-2 w-2 rounded-full bg-purple-400" /><div><span className="font-semibold">Beginner → Intermediate</span> requires <span className="font-semibold">70%</span>.</div></div>
-                      )}
-                      {studentLevel === 'Intermediate' && (
-                        <div className="flex items-start gap-2"><span className="mt-1 h-2 w-2 rounded-full bg-purple-400" /><div><span className="font-semibold">Intermediate → Pro/Master</span> requires <span className="font-semibold">70%</span> in Intermediate.</div></div>
-                      )}
-                      {(studentLevel === 'Pro' || studentLevel === 'Master') && (
-                        <div className="flex items-start gap-2"><span className="mt-1 h-2 w-2 rounded-full bg-purple-400" /><div>You are already at <span className="font-semibold">{studentLevel}</span> level. Keep refining to sustain top performance!</div></div>
-                      )}
-                      <div className="flex items-start gap-2"><span className="mt-1 h-2 w-2 rounded-full bg-gray-300" /><div><span className="font-semibold">Beginner → Intermediate</span>: target 70%.</div></div>
-                      <div className="flex items-start gap-2"><span className="mt-1 h-2 w-2 rounded-full bg-gray-300" /><div><span className="font-semibold">Intermediate → Pro/Master</span>: target 70% in Intermediate.</div></div>
-                    </div>
-                    <div className="px-4 pb-3 flex items-center justify-end">
-                      <Button
-                        variant="outline"
-                        onClick={async () => {
-                          try {
-                            if (document.fullscreenElement && (document as any).exitFullscreen) { await (document as any).exitFullscreen(); }
-                            else if ((document as any).webkitExitFullscreen) { (document as any).webkitExitFullscreen(); }
-                          } catch {}
-                          // Clear cached answers + timers after result is shown
-                          clearExamLocalCache();
-                          setExamStatus(selectedExamId, { dismissed: true });
-                          handleCloseResult();
-                          setShowResultDialog(false);
-                        }}
-                      >Close</Button>
-                    </div>
-                  </div>
+                  {/* Removed target details panel */}
                 </div>
               </div>
             );

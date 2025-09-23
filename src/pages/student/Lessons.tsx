@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '@/contexts/AuthContext';
-import { FileText, CheckCircle2 } from 'lucide-react';
+import { FileText } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { useStudentSession } from '@/contexts/StudentSessionContext';
 
 // Reuse the same course structure
 type EnrolledCourse = {
@@ -45,8 +46,8 @@ const StudentLessons: React.FC = () => {
   // Attended timestamps map: lessonId -> ISO string
   const [attendedMap, setAttendedMap] = useState<Record<string, string>>({});
 
-  // Animated master-detail state for course -> lessons
-  const [view, setView] = useState<'grid' | 'toDetail' | 'detail' | 'toGrid'>('grid');
+  // Session-selected course
+  const { currentCourse } = useStudentSession();
   const [lessonsIn, setLessonsIn] = useState(false);
 
   // Removed palettes as they are no longer used after standardized coloring
@@ -286,28 +287,15 @@ const StudentLessons: React.FC = () => {
     }
   };
 
-  const startEnterDetail = (c: EnrolledCourse) => {
-    // Begin transition immediately
-    setView('toDetail');
-    // Start loading lessons (non-blocking)
+  // Session-based: watch currentCourse and load lessons for it
+  useEffect(() => {
+    if (!currentCourse) return;
+    const c = { courseId: currentCourse.courseId, courseTitle: currentCourse.courseTitle } as EnrolledCourse;
+    setSelectedCourse(c);
     void handleSelectCourse(c);
-    // After a brief animation, reveal detail view and slide lessons in
-    window.setTimeout(() => {
-      setView('detail');
-      setLessonsIn(false);
-      window.requestAnimationFrame(() => setLessonsIn(true));
-    }, 400);
-  };
-
-  const startBackToGrid = () => {
-    setView('toGrid');
     setLessonsIn(false);
-    // Give time for lessons to slide down and courses to fly in from above
-    window.setTimeout(() => {
-      setSelectedCourse(null);
-      setView('grid');
-    }, 500);
-  };
+    window.requestAnimationFrame(() => setLessonsIn(true));
+  }, [currentCourse]);
 
   // Open a single lesson detail in a modal (professional inline view)
   const openLesson = async (lesson: LessonItem) => {
@@ -335,144 +323,25 @@ const StudentLessons: React.FC = () => {
     <div className="space-y-4 sm:space-y-6">
       <div className="flex flex-col gap-2">
         <h1 className="text-2xl font-bold text-purple-700">Lessons</h1>
-        <p className="text-gray-600 mt-1">Browse lessons by course.</p>
+        {!currentCourse ? (
+          <p className="text-gray-600 mt-1">Please select a course from the Dashboard to view lessons.</p>
+        ) : (
+          <p className="text-gray-600 mt-1">You are viewing lessons for <span className="font-medium text-purple-800">{currentCourse.courseTitle}</span>.</p>
+        )}
       </div>
 
-      {/* Course filter buttons removed as requested */}
-
-      {/* Courses (single solid area — no border/shadow wrapper) */}
-      {(view === 'grid' || view === 'toDetail' || view === 'toGrid') && (
-        <div>
-        {loading ? (
-          <div className="flex items-center justify-center min-h-[160px]">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-              <p className="mt-4 text-gray-600">Loading your courses...</p>
-            </div>
-          </div>
-        ) : courses.length === 0 ? (
-          <p className="text-sm text-gray-500">No enrolled courses found.</p>
-        ) : (
-          <div className="max-h-[24rem] overflow-auto pb-6">
-            <div className="relative min-h-[260px] grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-3">
-              {courses
-                .filter(() => true)
-                .map((c) => {
-                const isSelected = selectedCourse?.courseId === c.courseId;
-                const stats = lessonStats[c.courseId] || { total: 0, attended: 0, unattempted: 0 };
-                const isZero = (stats.unattempted || 0) === 0;
-                const hasUnattended = (stats.unattempted || 0) > 0;
-                // Base accent classes: green for all-attended, red (rose) for pending. No rings/glow for unselected.
-                // Keep the same background color whether selected or not (no shade change on select)
-                const baseBg = isZero ? 'bg-emerald-50' : 'bg-rose-50';
-                const hoverClasses = isZero ? 'hover:bg-emerald-100 hover:border-emerald-500' : 'hover:bg-rose-100 hover:border-rose-500';
-                // Animation transforms for master -> detail
-                const inDetailTransition = view === 'toDetail';
-                // Other cards: fly completely off-screen upward during transition; fall down from top when returning
-                const flyOthers = (!isSelected && inDetailTransition)
-                  ? '-translate-y-32 opacity-0'
-                  : (view === 'toGrid' ? '-translate-y-32 opacity-0' : 'translate-y-0 opacity-100');
-                // Selected card: smoothly fly to top-left without any size changes
-                const flySel = inDetailTransition && isSelected ? '-translate-x-32 -translate-y-16' : '';
-                // Pin to exact top-left position during transition for seamless movement
-                const pinTopLeft = inDetailTransition && isSelected ? 'absolute top-4 left-4 z-20 pointer-events-none' : '';
-                return (
-                  <button
-                    key={c.courseId}
-                    type="button"
-                    onClick={() => startEnterDetail(c)}
-                    className={`group text-left mx-auto w-full max-w-[420px] flex flex-col gap-2 rounded-xl border ${isZero ? 'border-emerald-400' : 'border-rose-400'} ${baseBg} ${isSelected ? 'shadow-none' : 'shadow-sm'} px-4 py-3 transition cursor-pointer hover:-translate-y-0.5 hover:shadow-md ${hoverClasses} transform duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform ${pinTopLeft} ${flyOthers} ${flySel}`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="truncate pr-1 text-sm sm:text-base font-medium text-gray-800">{c.courseTitle}</div>
-                        <div className="mt-1 flex flex-wrap items-center gap-2">
-                          <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs px-2 py-0.5 rounded-full border border-green-500 text-green-700 bg-green-50">
-                            <CheckCircle2 size={14} /> Enrolled
-                          </span>
-                          <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs px-2 py-0.5 rounded-full border border-purple-300 text-purple-700 bg-purple-50">
-                            <FileText size={14} /> Lessons: {stats.total}
-                          </span>
-                          <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs px-2 py-0.5 rounded-full border border-emerald-200 text-emerald-700 bg-emerald-50">
-                            Attended: {stats.attended}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="shrink-0 text-right">
-                        <div className="flex flex-col items-end justify-center">
-                          <div className={`leading-none text-3xl sm:text-4xl font-black tracking-tight tabular-nums ${isZero ? 'text-emerald-600' : 'text-rose-700'} drop-shadow-sm`}>
-                            {stats.unattempted}
-                          </div>
-                          <div className={`mt-1 text-[11px] sm:text-xs font-semibold uppercase tracking-wide ${isZero ? 'text-emerald-700' : 'text-rose-700'}`}>Unattended Lessons</div>
-                        </div>
-                      </div>
-                    </div>
-                    <div className={`mt-1 text-xs ${isZero ? 'text-emerald-700' : 'text-rose-700'} ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition`}>
-                      {isSelected ? 'Viewing lessons' : (hasUnattended ? 'View lessons' : 'All attended')}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-        </div>
-      )}
-
-      {/* Animated Detail view: only back arrow + one shrunk card */}
-      {view === 'detail' && selectedCourse && (
+      {/* Session Detail view */}
+      {currentCourse && selectedCourse && (
         <div>
           <div className="flex items-start gap-3">
-            {/* Back arrow */}
-            <button
-              type="button"
-              onClick={startBackToGrid}
-              className="group inline-flex items-center gap-2 text-purple-700 hover:text-purple-800 transition-colors"
-              aria-label="Back to courses"
-            >
-              <svg viewBox="0 0 46.032 46.033" className="w-10 h-10 -ml-1 transition-transform duration-300 ease-out group-hover:-translate-x-0.5" aria-hidden="true">
-                <path d="M8.532,18.531l8.955-8.999c-0.244-0.736-0.798-1.348-1.54-1.653c-1.01-0.418-2.177-0.185-2.95,0.591L1.047,20.479 c-1.396,1.402-1.396,3.67,0,5.073l11.949,12.01c0.771,0.775,1.941,1.01,2.951,0.592c0.742-0.307,1.295-0.918,1.54-1.652l-8.956-9 C6.07,25.027,6.071,21.003,8.532,18.531z" fill="currentColor" />
-                <path d="M45.973,31.64c-1.396-5.957-5.771-14.256-18.906-16.01v-5.252c0-1.095-0.664-2.082-1.676-2.5 c-0.334-0.138-0.686-0.205-1.033-0.205c-0.705,0-1.398,0.276-1.917,0.796L10.49,20.479c-1.396,1.402-1.396,3.669-0.001,5.073 l11.95,12.009c0.517,0.521,1.212,0.797,1.92,0.797c0.347,0,0.697-0.066,1.031-0.205c1.012-0.418,1.676-1.404,1.676-2.5V30.57 c4.494,0.004,10.963,0.596,15.564,3.463c0.361,0.225,0.77,0.336,1.176,0.336c0.457,0,0.91-0.139,1.297-0.416 C45.836,33.429,46.18,32.515,45.973,31.64z" fill="currentColor" />
-              </svg>
-              <span className="text-sm font-medium">Back</span>
-            </button>
-            {/* Selected course card (pinned) - keep same color scheme as grid, no shrink */}
-            {(() => {
-              const selStats = lessonStats[selectedCourse.courseId] || { total: 0, attended: 0, unattempted: 0 };
-              const selZero = (selStats.unattempted || 0) === 0;
-              const bgCls = selZero ? 'bg-emerald-50' : 'bg-rose-50';
-              const borderCls = selZero ? 'border-emerald-400' : 'border-rose-400';
-              const accentText = selZero ? 'text-emerald-700' : 'text-rose-700';
-              return (
-                <div className={`rounded-xl ${bgCls} px-4 py-3 border ${borderCls}`}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="truncate pr-1 text-sm sm:text-base font-medium text-gray-800">{selectedCourse.courseTitle}</div>
-                      <div className="mt-1 flex flex-wrap items-center gap-2">
-                        <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs px-2 py-0.5 rounded-full border border-green-500 text-green-700 bg-green-50">
-                          <CheckCircle2 size={14} /> Enrolled
-                        </span>
-                        <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs px-2 py-0.5 rounded-full border border-purple-300 text-purple-700 bg-purple-50">
-                          <FileText size={14} /> Lessons: {lessons.length}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <div className={`leading-none text-3xl sm:text-4xl font-black tracking-tight tabular-nums ${accentText} drop-shadow-sm`}>
-                        {(selStats.unattempted ?? 0)}
-                      </div>
-                      <div className={`mt-1 text-[11px] sm:text-xs font-semibold uppercase tracking-wide ${accentText}`}>Unattended Lessons</div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
+            <div className="inline-flex items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-3 py-1 text-purple-800">
+              <span className="text-sm sm:text-base font-semibold">Lessons – {selectedCourse.courseTitle}</span>
+            </div>
           </div>
         </div>
       )}
-
       {/* Lessons emerging from below */}
-      {view === 'detail' && selectedCourse && (
+      {currentCourse && selectedCourse && (
         <div className={`mt-6 transform transition-all duration-700 ${lessonsIn ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}`} style={{ transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)' }}>
           {/* Lesson filter buttons removed as requested */}
           {loadingLessons ? (
