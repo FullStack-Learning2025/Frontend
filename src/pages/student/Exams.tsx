@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { CheckCircle2, FileText, History } from 'lucide-react';
+import { CheckCircle2, GraduationCap, History } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -39,18 +39,16 @@ const StudentExams: React.FC = () => {
   const [examAttendedMap, setExamAttendedMap] = useState<Record<string, string>>({});
   // Only complexity filter retained; remove course/attempt filters
   const [examComplexity, setExamComplexity] = useState<'all' | 'Easy' | 'Medium' | 'Hard'>('all');
+  // Category filter (client-side based on API response)
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [availableCategories, setAvailableCategories] = useState<string[]>([]);
+  // Attempt filter (submitted vs not submitted)
+  const [attemptFilter, setAttemptFilter] = useState<'all' | 'attempted' | 'not_attempted'>('all');
   const [page, setPage] = useState<number>(1);
-  const [pageSize] = useState<number>(12);
+  const [pageSize, setPageSize] = useState<number>(12);
   const [lastPageCount, setLastPageCount] = useState<number>(0);
-  const [currentPageItemsCount, setCurrentPageItemsCount] = useState<number>(0);
-  const [pagination, setPagination] = useState<{
-    currentPage: number;
-    pageSize: number;
-    totalCount: number;
-    totalPages: number;
-    hasNextPage: boolean;
-    hasPrevPage: boolean;
-  } | null>(null);
+  const [hasNext, setHasNext] = useState<boolean>(false);
+  const [hasPrev, setHasPrev] = useState<boolean>(false);
   const [showAttempts, setShowAttempts] = useState(false);
   const [attemptsRows, setAttemptsRows] = useState<Array<{ date: string; percentage: number }>>([]);
   const [attemptsExamTitle, setAttemptsExamTitle] = useState<string>('Attempts');
@@ -94,13 +92,26 @@ const StudentExams: React.FC = () => {
     }
   };
 
+  // Load all categories for selected course from backend once
+  useEffect(() => {
+    const run = async () => {
+      const cid = selectedCourse?.courseId || currentCourse?.courseId;
+      if (!cid || !token) return;
+      try {
+        const res = await axios.get(`${import.meta.env.VITE_BACKEND_URL}/api/students/exam-categories`, {
+          params: { courseId: cid },
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const cats = Array.isArray(res.data?.data) ? res.data.data : (Array.isArray(res.data) ? res.data : []);
+        setAvailableCategories(cats);
+      } catch {}
+    };
+    run();
+  }, [selectedCourse, currentCourse, token]);
+
   // Helper to load exams for selected course with current complexity and pagination
   const loadExamsForCourse = async (c: EnrolledCourse, opts?: { resetPage?: boolean }) => {
-    if (opts?.resetPage) {
-      setPage(1);
-      setPagination(null);
-      setCurrentPageItemsCount(0);
-    }
+    if (opts?.resetPage) setPage(1);
     const effectivePage = opts?.resetPage ? 1 : page;
     setLoadingExams(true);
     // prepare enter animation
@@ -114,34 +125,19 @@ const StudentExams: React.FC = () => {
             complexity: examComplexity,
             page: effectivePage,
             pageSize,
+            ...(selectedCategory && selectedCategory !== 'all' ? { category: selectedCategory } : {}),
           },
           headers: { Authorization: `Bearer ${token}` },
         }
       );
       const items = Array.isArray(res.data?.data) ? res.data.data : (Array.isArray(res.data) ? res.data : []);
-      const paginationData = res.data?.pagination || null;
-
-      // Update pagination state
-      if (paginationData) {
-        setPagination(paginationData);
-      }
-
-      // Use pagination metadata for lastPageCount instead of items.length
-      setLastPageCount(paginationData ? paginationData.totalCount : (items.length || 0));
-      setCurrentPageItemsCount(items.length);
-
-      // If we have pagination data and it shows there are more pages, enable Next button
-      if (paginationData && paginationData.hasNextPage) {
-        console.log('Pagination data received with hasNextPage:', paginationData.hasNextPage);
-        console.log('Current page items count:', items.length);
-      }
       // Persist so Questions page can read context later
       try { localStorage.setItem('student_exams_list', JSON.stringify({ courseId: c.courseId, courseTitle: c.courseTitle, items })); } catch {}
       // Normalize to ExamItem[] similar to Exams page
       const normalized: ExamItem[] = (items.length && Array.isArray(items[0]?.exams))
         ? items.flatMap((teacher: any) => (teacher.exams || []).map((ex: any) => ({
             id: ex.id,
-            title: `${(ex.category || 'Exam')}`,
+            title: ex.title || (ex.category || 'Exam'),
             course_name: teacher.full_name || 'Teacher',
             status: ex.hasAttempted ? 'Attempted' : 'New',
             total_attempts: ex.hasAttempted ? 1 : 0,
@@ -158,7 +154,30 @@ const StudentExams: React.FC = () => {
             created_at: ex.created_at || ex.createdAt,
             attempts: Array.isArray((ex as any).attempts) ? (ex as any).attempts : [],
           }));
-      setExams(normalized);
+
+      // Update available categories (union) using current page as fallback enrichment
+      try {
+        const pageCats = Array.from(new Set(normalized.map((e: any) => e.category).filter(Boolean)));
+        if (pageCats.length) {
+          setAvailableCategories((prev) => Array.from(new Set([...(prev || []), ...pageCats])));
+        }
+      } catch {}
+
+      // Apply attempt filter (category handled server-side)
+      const filtered = attemptFilter === 'all'
+        ? normalized
+        : attemptFilter === 'attempted'
+          ? normalized.filter((e: any) => !!e.hasAttempted)
+          : normalized.filter((e: any) => !e.hasAttempted);
+      // set pagination flags from backend response
+      const pagination = (res.data && (res.data.pagination || res.data.meta)) || null;
+      setHasNext(Boolean(pagination?.hasNextPage));
+      setHasPrev(Boolean(pagination?.hasPrevPage));
+
+      // compute last page count from filtered items
+      setLastPageCount(filtered.length || 0);
+
+      setExams(filtered);
       // Fetch exam attended timestamps for these exams
       try {
         const ids = normalized.map(x => x.id).filter(Boolean);
@@ -196,14 +215,58 @@ const StudentExams: React.FC = () => {
     setSelectedCourse(c);
     loadExamsForCourse(c);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentCourse, examComplexity, page]);
+  }, [currentCourse, examComplexity, page, pageSize]);
 
-  // Debug pagination state changes
+  // Persist and react to category filter changes (refetch and apply)
   useEffect(() => {
-    console.log('Pagination state changed:', pagination);
-    console.log('Current page items count:', currentPageItemsCount);
-    console.log('Should Next button be enabled?', pagination === null ? (currentPageItemsCount >= 12) : pagination.hasNextPage);
-  }, [pagination, currentPageItemsCount]);
+    try { localStorage.setItem('student_exams_category_filter', selectedCategory); } catch {}
+    if (!selectedCourse) return;
+    // Re-load current page to apply filter and refresh categories if needed
+    loadExamsForCourse(selectedCourse);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCategory]);
+
+  // Restore category filter from storage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('student_exams_category_filter');
+      if (saved) setSelectedCategory(saved);
+    } catch {}
+  }, []);
+
+  // Persist + apply page size changes
+  useEffect(() => {
+    try { localStorage.setItem('student_exams_page_size', String(pageSize)); } catch {}
+    if (!selectedCourse) return;
+    // When page size changes, best UX is to reset to page 1 to avoid out-of-range page
+    loadExamsForCourse(selectedCourse, { resetPage: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageSize]);
+
+  // Restore page size on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('student_exams_page_size');
+      const n = saved ? parseInt(saved, 10) : NaN;
+      if (n && [10,25,50,100].includes(n)) setPageSize(n);
+    } catch {}
+  }, []);
+
+  // Persist + apply attempt filter changes
+  useEffect(() => {
+    try { localStorage.setItem('student_exams_attempt_filter', attemptFilter); } catch {}
+    if (!selectedCourse) return;
+    loadExamsForCourse(selectedCourse);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attemptFilter]);
+
+  // Restore attempt filter from storage
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('student_exams_attempt_filter');
+      if (saved === 'attempted' || saved === 'not_attempted' || saved === 'all') setAttemptFilter(saved);
+    } catch {}
+  }, []);
 
   // Enrich attempted exams with percentage (limits concurrency and avoids unnecessary state updates)
   useEffect(() => {
@@ -312,6 +375,9 @@ const StudentExams: React.FC = () => {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="truncate pr-1 text-sm sm:text-base font-medium text-gray-800">{e.title}</div>
+                    {e.category && (
+                      <div className="text-xs text-gray-600 mt-0.5 truncate">{e.category}</div>
+                    )}
                     {e.course_name && (
                       <div className="text-xs text-gray-500 mt-0.5 truncate">By {e.course_name}</div>
                     )}
@@ -367,7 +433,7 @@ const StudentExams: React.FC = () => {
                   </div>
                   <div className="shrink-0">
                     <div className="h-16 w-24 rounded-md bg-gray-100 border border-gray-200 overflow-hidden flex items-center justify-center">
-                      <FileText className="h-5 w-5 text-gray-400" />
+                      <GraduationCap className="h-10 w-10 text-gray-600" />
                     </div>
                   </div>
                 </div>
@@ -401,30 +467,76 @@ const StudentExams: React.FC = () => {
           <div className="inline-flex items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-3 py-1 text-purple-800">
             <span className="text-sm sm:text-base font-semibold">Exams – {selectedCourse.courseTitle}</span>
           </div>
-          {pagination && (
-            <div className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1 text-gray-600">
-              <span className="text-xs sm:text-sm">Total: {pagination.totalCount} exams</span>
-            </div>
-          )}
         </div>
       )}
 
     {/* Complexity filter + pagination */}
     <div className="mt-4 flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between">
-      <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden">
-        {(['all','Easy','Medium','Hard'] as const).map(val => (
-          <button
-            key={val}
-            type="button"
-            onClick={() => { setExamComplexity(val); setPage(1); setPagination(null); setCurrentPageItemsCount(0); }}
-            className={`px-3 py-1.5 text-xs sm:text-sm ${examComplexity === val ? 'bg-purple-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'} ${val !== 'all' ? 'border-l border-gray-200' : ''}`}
-          >{val === 'all' ? 'All' : val}</button>
-        ))}
+      <div className="flex items-center gap-3">
+        <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden">
+          {(['all','Easy','Medium','Hard'] as const).map(val => (
+            <button
+              key={val}
+              type="button"
+              onClick={() => { setExamComplexity(val); setPage(1); }}
+              className={`px-3 py-1.5 text-xs sm:text-sm ${examComplexity === val ? 'bg-purple-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'} ${val !== 'all' ? 'border-l border-gray-200' : ''}`}
+            >{val === 'all' ? 'All' : val}</button>
+          ))}
+        </div>
+        {/* Category filter dropdown */}
+        <div className="inline-flex items-center gap-2">
+          <label htmlFor="exam-category" className="text-xs text-gray-600 hidden sm:block">Category</label>
+          <select
+            id="exam-category"
+            className="px-2 py-1.5 text-xs sm:text-sm border border-gray-200 rounded-md bg-white text-gray-700 hover:border-gray-300"
+            value={selectedCategory}
+            onChange={(e) => { setSelectedCategory(e.target.value); }}
+          >
+            <option value="all">All</option>
+            {availableCategories.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </div>
+        {/* Attempt status filter */}
+        <div className="inline-flex items-center gap-2">
+          <label htmlFor="exam-attempt" className="text-xs text-gray-600 hidden sm:block">Status</label>
+          <select
+            id="exam-attempt"
+            className="px-2 py-1.5 text-xs sm:text-sm border border-gray-200 rounded-md bg-white text-gray-700 hover:border-gray-300"
+            value={attemptFilter}
+            onChange={(e) => setAttemptFilter(e.target.value as any)}
+          >
+            <option value="all">All</option>
+            <option value="attempted">Submitted</option>
+            <option value="not_attempted">Not submitted</option>
+          </select>
+        </div>
       </div>
       <div className="flex items-center justify-end gap-2 px-1">
-        <button type="button" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1 || !pagination?.hasPrevPage} className={`px-3 py-1.5 text-xs rounded-md border ${page <= 1 || !pagination?.hasPrevPage ? 'text-gray-400 border-gray-200 bg-gray-50' : 'text-gray-700 border-gray-200 hover:bg-gray-50'}`}>Prev</button>
-        <span className="text-xs text-gray-600">Page {pagination?.currentPage || page} of {pagination?.totalPages || 1}</span>
-        <button type="button" onClick={() => setPage(p => p + 1)} disabled={pagination === null ? (currentPageItemsCount < 12) : !pagination.hasNextPage} className={`px-3 py-1.5 text-xs rounded-md border ${pagination === null ? (currentPageItemsCount < 12) : !pagination.hasNextPage ? 'text-gray-400 border-gray-200 bg-gray-50' : 'text-gray-700 border-gray-200 hover:bg-gray-50'}`}>Next {pagination?.hasNextPage ? 'ENABLED' : 'DISABLED'}</button>
+        {/* Page size selector */}
+        <div className="inline-flex items-center gap-2 mr-2">
+          <label htmlFor="exam-page-size" className="text-xs text-gray-600 hidden sm:block">Per page</label>
+          <select
+            id="exam-page-size"
+            className="px-2 py-1.5 text-xs sm:text-sm border border-gray-200 rounded-md bg-white text-gray-700 hover:border-gray-300"
+            value={pageSize}
+            onChange={(e) => {
+              const n = parseInt(e.target.value, 10);
+              if ([10,25,50,100].includes(n)) {
+                setPageSize(n);
+                setPage(1);
+              }
+            }}
+          >
+            {[10,25,50,100].map(n => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+        </div>
+        <button type="button" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={!hasPrev} className={`px-3 py-1.5 text-xs rounded-md border ${!hasPrev ? 'text-gray-400 border-gray-200 bg-gray-50' : 'text-gray-700 border-gray-200 hover:bg-gray-50'}`}>Prev</button>
+        <span className="text-xs text-gray-600">Page {page}</span>
+        <button type="button" onClick={() => setPage(p => p + 1)} disabled={!hasNext} className={`px-3 py-1.5 text-xs rounded-md border ${!hasNext ? 'text-gray-400 border-gray-200 bg-gray-50' : 'text-gray-700 border-gray-200 hover:bg-gray-50'}`}>Next</button>
       </div>
     </div>
 
