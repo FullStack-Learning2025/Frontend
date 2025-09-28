@@ -1249,10 +1249,7 @@ const StudentExams: React.FC = () => {
                   onClick={() => setCurrentPage(1)}>
                   <ChevronsLeft size={16} /> First
                 </Button>
-                <Button variant="outline" size="sm" className="flex items-center gap-1" disabled={currentPage === 1 || !examStarted || submitted}
-                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}>
-                  <ChevronLeft size={16} /> Prev
-                </Button>
+                {/* Prev moved below answers */}
                 <div className="text-sm text-gray-700">Question {currentPage} of {pageCount}</div>
               </div>
               <div className="flex items-center gap-2">
@@ -1310,14 +1307,7 @@ const StudentExams: React.FC = () => {
                     </div>
                   )}
                 </div>
-                <Button variant="outline" size="sm" className="flex items-center gap-1" disabled={currentPage === pageCount || !examStarted || submitted}
-                  onClick={() => setCurrentPage(p => Math.min(pageCount, p + 1))}>
-                  Next <ChevronRight size={16} />
-                </Button>
-                <Button variant="outline" size="sm" className="flex items-center gap-1" disabled={currentPage === pageCount || !examStarted || submitted}
-                  onClick={() => setCurrentPage(pageCount)}>
-                  Last <ChevronsRight size={16} />
-                </Button>
+                {/* Next/Last moved below answers */}
               </div>
             </div>
           </Card>
@@ -1390,9 +1380,11 @@ const StudentExams: React.FC = () => {
                 .map((q, idx) => (
                   <Card id={`q-${q.id}`} key={q.id} className={cn("border border-gray-200 dark:border-gray-1000 bg-white dark:bg-gray-900 ml-4 mr-4", examStarted ? "p-3 sm:p-4" : "p-4 sm:p-5")}>
                     <div className={cn(examStarted ? "space-y-2" : "space-y-4")}>
-                      <div className="font-semibold text-gray-900 dark:text-gray-100 leading-relaxed whitespace-pre-line">
-                        <span className="text-gray-500 mr-1">{currentPage}.</span>
-                        {q.question}
+                      <div className="flex items-start gap-2">
+                        <span className="text-gray-500 mr-1 select-none">{currentPage}.</span>
+                        <div className="font-semibold text-gray-900 dark:text-gray-100 leading-relaxed whitespace-pre-line max-h-48 sm:max-h-60 md:max-h-72 overflow-auto pr-2 overscroll-y-contain">
+                          {q.question}
+                        </div>
                       </div>
                       <div className="flex flex-col items-end gap-2">
                         <div className="flex items-center gap-2">
@@ -1621,6 +1613,43 @@ const StudentExams: React.FC = () => {
                       </div>
                     )}
                     {renderOptions(q)}
+                    {/* Bottom navigation below answers */}
+                    <div className="mt-3 flex items-center justify-between">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex items-center gap-1"
+                        disabled={currentPage === 1 || !examStarted || submitted}
+                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      >
+                        <ChevronLeft size={16} /> Prev
+                      </Button>
+                      <div className="flex items-center gap-2">
+                        {answers[q.id]
+                          ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="flex items-center gap-1"
+                              disabled={!examStarted || submitted || currentPage === pageCount}
+                              onClick={() => setCurrentPage(p => Math.min(pageCount, p + 1))}
+                            >
+                              Next <ChevronRight size={16} />
+                            </Button>
+                          )
+                          : (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              className="flex items-center gap-1"
+                              disabled={!examStarted || submitted || currentPage === pageCount}
+                              onClick={() => setCurrentPage(p => Math.min(pageCount, p + 1))}
+                            >
+                              Skip
+                            </Button>
+                          )}
+                      </div>
+                    </div>
                     {/* Recorded preview */}
                     {answerMedia[q.id]?.url && (
                       <div className="mt-3">
