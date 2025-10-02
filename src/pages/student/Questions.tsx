@@ -930,6 +930,7 @@ const StudentExams: React.FC = () => {
         questions: ordered,
         auto,
         media: answerMedia,
+        timeTaken: timeTaken != null ? Math.max(0, Math.floor(timeTaken)) : undefined,
       };
       const res = await axios.post(`${import.meta.env.VITE_BACKEND_URL}/api/exams/${selectedExamId}/submit`, payload, {
         headers: { Authorization: `Bearer ${token}` }
@@ -1843,10 +1844,24 @@ const StudentExams: React.FC = () => {
                   <div className="flex items-center justify-between"><span className="text-gray-500">Time left</span><span className="font-medium">{formatTime(remainingSec)}</span></div>
                 </div>
                 <div className="mt-4 flex items-center justify-end gap-2">
-                  <Button variant="outline" onClick={() => { try { requestFullscreenImmediate(); } catch {}; setShowSubmitConfirm(false); }}>No, Review</Button>
-                  <Button onClick={() => { setShowSubmitConfirm(false); handleSubmit(false); }} className="inline-flex items-center gap-2">Yes, Submit</Button>
+                  <Button variant="outline" disabled={submitting} onClick={() => { try { requestFullscreenImmediate(); } catch {}; setShowSubmitConfirm(false); }}>No, Review</Button>
+                  <Button disabled={submitting} onClick={() => { setShowSubmitConfirm(false); handleSubmit(false); }} className="inline-flex items-center gap-2">
+                    {submitting && <span className="h-3 w-3 rounded-full border-2 border-purple-300 border-t-transparent animate-spin"></span>}
+                    {submitting ? 'Submitting…' : 'Yes, Submit'}
+                  </Button>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Submitting overlay while waiting for server response */}
+        {submitting && !showResultDialog && !showSubmitConfirm && (
+          <div className="fixed inset-0 z-[59] flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/30" />
+            <div className="relative z-[60] rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl px-6 py-4 flex items-center gap-3">
+              <span className="h-5 w-5 rounded-full border-2 border-purple-300 border-t-transparent animate-spin" />
+              <div className="text-sm text-gray-700 dark:text-gray-200">Submitting… Please wait</div>
             </div>
           </div>
         )}

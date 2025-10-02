@@ -50,8 +50,22 @@ const StudentExams: React.FC = () => {
   const [hasNext, setHasNext] = useState<boolean>(false);
   const [hasPrev, setHasPrev] = useState<boolean>(false);
   const [showAttempts, setShowAttempts] = useState(false);
-  const [attemptsRows, setAttemptsRows] = useState<Array<{ date: string; percentage: number }>>([]);
-  const [attemptsExamTitle, setAttemptsExamTitle] = useState<string>('Attempts');
+  const [attemptsRows, setAttemptsRows] = useState<Array<{ date: string; total_questions?: number; correct?: number; wrong?: number; no_answer?: number; total_time_sec?: number | null; exam_time_sec?: number | null; percentage?: number | null }>>([]);
+  const [attemptsExamTitle, setAttemptsExamTitle] = useState<string>('Progress');
+  const [attemptsSummary, setAttemptsSummary] = useState<{ trials: number; best?: number | null; last5?: number[]; trend?: 'improving'|'declining'|'flat'|null; target?: number | null }>({ trials: 0, best: null, last5: [], trend: null, target: null });
+  const [progressLoadingId, setProgressLoadingId] = useState<string | null>(null);
+
+  // Helper to format seconds as HH:MM:SS and verbose tooltip
+  const formatHMS = (sec?: number | null) => {
+    const s = typeof sec === 'number' && isFinite(sec) ? Math.max(0, Math.floor(sec)) : null;
+    if (s == null) return { text: '—', title: '' };
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const r = s % 60;
+    const text = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${r.toString().padStart(2,'0')}`;
+    const title = `${h}h ${m}m ${r}s`;
+    return { text, title };
+  };
 
   // Session-selected course
   const { currentCourse, selectExam } = useStudentSession();
@@ -403,19 +417,49 @@ const StudentExams: React.FC = () => {
                           Not Attempted
                         </span>
                       )}
-                      {Array.isArray(e.attempts) && e.attempts.length > 0 && (
+                      {true && (
                         <span
                           role="button"
                           tabIndex={0}
                           onClick={(ev) => {
                             ev.stopPropagation();
-                            const rows = e.attempts!.map((a) => ({
-                              date: new Date(a.submitted_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }),
-                              percentage: a.percentage ?? 0,
-                            }));
-                            setAttemptsExamTitle(`${e.title} – Attempts`);
-                            setAttemptsRows(rows);
-                            setShowAttempts(true);
+                            (async () => {
+                              // open modal immediately with loading state
+                              setAttemptsExamTitle(`${e.title || 'Exam'} – Progress`);
+                              setAttemptsRows([]);
+                              setAttemptsSummary({ trials: 0, best: null, last5: [], trend: null, target: null });
+                              setShowAttempts(true);
+                              setProgressLoadingId(e.id);
+                              try {
+                                const res = await axios.get(`${import.meta.env.VITE_BACKEND_URL}/api/students/exam-attempts`, {
+                                  params: { examId: e.id },
+                                  headers: { Authorization: `Bearer ${token}` },
+                                });
+                                const data = res?.data?.data ?? res?.data;
+                                const title = data?.examTitle || e.title || 'Progress';
+                                setAttemptsExamTitle(`${title} – Progress`);
+                                const rows = Array.isArray(data?.attempts) ? data.attempts.map((a: any) => ({
+                                  date: a.submitted_at ? new Date(a.submitted_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) : '-',
+                                  total_questions: a.total_questions ?? undefined,
+                                  correct: a.correct_count ?? undefined,
+                                  wrong: a.wrong_count ?? undefined,
+                                  no_answer: a.no_answer_count ?? undefined,
+                                  total_time_sec: a.total_time_sec ?? null,
+                                  exam_time_sec: a.exam_time_sec ?? null,
+                                  percentage: a.percentage ?? null,
+                                })) : [];
+                                setAttemptsRows(rows);
+                                setAttemptsSummary({
+                                  trials: Number(data?.trials) || rows.length,
+                                  best: typeof data?.bestAttempt?.percentage === 'number' ? data.bestAttempt.percentage : (rows.length ? Math.max(...rows.map(r => r.percentage ?? -1)) : null),
+                                  last5: Array.isArray(data?.last5) ? data.last5 : rows.slice(0,5).map(r => r.percentage || 0),
+                                  trend: (data?.trend === 'improving' || data?.trend === 'declining' || data?.trend === 'flat') ? data.trend : null,
+                                  target: typeof data?.target === 'number' ? data.target : null,
+                                });
+                              } catch (err: any) {
+                                toast({ title: 'Error', description: err?.response?.data?.error || 'Failed to load progress.', variant: 'destructive' });
+                              } finally { setProgressLoadingId(null); }
+                            })();
                           }}
                           onKeyDown={(ev) => {
                             if (ev.key === 'Enter' || ev.key === ' ') {
@@ -424,9 +468,18 @@ const StudentExams: React.FC = () => {
                             }
                           }}
                           className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-purple-50 text-purple-700 px-2 py-0.5 text-[11px] sm:text-xs hover:border-purple-300 hover:bg-purple-100 cursor-pointer"
-                          title="View attempt history"
+                          title="View progress details"
                         >
-                          <History size={14} /> History
+                          {progressLoadingId === e.id ? (
+                            <span className="inline-flex items-center gap-2">
+                              <span className="h-3 w-3 rounded-full border-2 border-purple-300 border-t-transparent animate-spin"></span>
+                              Loading
+                            </span>
+                          ) : (
+                            <>
+                              <History size={14} /> Progress
+                            </>
+                          )}
                         </span>
                       )}
                     </div>
@@ -565,34 +618,68 @@ const StudentExams: React.FC = () => {
 
         {/* Attempts history modal */}
         <Dialog open={showAttempts} onOpenChange={setShowAttempts}>
-          <DialogContent className="sm:max-w-lg">
+          <DialogContent className="sm:max-w-3xl">
             <DialogHeader>
               <DialogTitle>{attemptsExamTitle}</DialogTitle>
-              <DialogDescription>All your attempts for this exam</DialogDescription>
+              <DialogDescription>Progress across your attempts for this exam</DialogDescription>
             </DialogHeader>
+            {/* Summary Row */}
+            <div className="mt-2 flex flex-wrap gap-2 text-xs sm:text-sm">
+              <span className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 text-gray-700 px-2 py-0.5">Trials: {attemptsSummary.trials}</span>
+              {typeof attemptsSummary.best === 'number' && <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 px-2 py-0.5">Best: {attemptsSummary.best}%</span>}
+              {attemptsSummary.last5 && attemptsSummary.last5.length > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-purple-50 text-purple-700 px-2 py-0.5">Last 5: {attemptsSummary.last5.join(', ')}%</span>
+              )}
+              {attemptsSummary.trend && (
+                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 ${attemptsSummary.trend === 'improving' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : attemptsSummary.trend === 'declining' ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-gray-200 bg-gray-50 text-gray-700'}`}>Trend: {attemptsSummary.trend}</span>
+              )}
+              {typeof attemptsSummary.target === 'number' && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 text-blue-700 px-2 py-0.5">Target: {attemptsSummary.target}%</span>
+              )}
+            </div>
             <div className="mt-2 overflow-hidden rounded-lg border border-gray-200">
+              {progressLoadingId && (
+                <div className="flex items-center justify-center py-10">
+                  <span className="h-6 w-6 rounded-full border-2 border-purple-300 border-t-transparent animate-spin mr-2"></span>
+                  <span className="text-sm text-gray-600">Loading progress...</span>
+                </div>
+              )}
+              <div className="max-h-[60vh] overflow-y-auto">
               <table className="min-w-full divide-y divide-gray-200 text-sm">
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-4 py-2 text-left font-semibold text-gray-700">Attempt Date & Time</th>
+                    <th className="px-4 py-2 text-left font-semibold text-gray-700">Total Qs</th>
+                    <th className="px-4 py-2 text-left font-semibold text-gray-700">Correct</th>
+                    <th className="px-4 py-2 text-left font-semibold text-gray-700">Wrong</th>
+                    <th className="px-4 py-2 text-left font-semibold text-gray-700">No Answer</th>
+                    <th className="px-4 py-2 text-left font-semibold text-gray-700">Attempt Time (HH:MM:SS)</th>
+                    <th className="px-4 py-2 text-left font-semibold text-gray-700">Exam Time (HH:MM:SS)</th>
                     <th className="px-4 py-2 text-left font-semibold text-gray-700">Percentage</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white">
                   {attemptsRows.length === 0 ? (
                     <tr>
-                      <td className="px-4 py-3 text-gray-500" colSpan={2}>No attempts yet.</td>
+                      <td className="px-4 py-3 text-gray-500" colSpan={8}>No attempts yet.</td>
                     </tr>
                   ) : (
                     attemptsRows.map((row, idx) => (
                       <tr key={idx} className="hover:bg-purple-50">
                         <td className="px-4 py-2 text-gray-800">{row.date}</td>
-                        <td className="px-4 py-2 text-gray-800">{row.percentage}%</td>
+                        <td className="px-4 py-2 text-gray-800">{row.total_questions ?? '—'}</td>
+                        <td className="px-4 py-2 text-gray-800">{row.correct ?? '—'}</td>
+                        <td className="px-4 py-2 text-gray-800">{row.wrong ?? '—'}</td>
+                        <td className="px-4 py-2 text-gray-800">{row.no_answer ?? '—'}</td>
+                        {(() => { const f = formatHMS(row.total_time_sec ?? null); return (<td className="px-4 py-2 text-gray-800"><span title={f.title}>{f.text}</span></td>); })()}
+                        {(() => { const f = formatHMS(row.exam_time_sec ?? null); return (<td className="px-4 py-2 text-gray-800"><span title={f.title}>{f.text}</span></td>); })()}
+                        <td className="px-4 py-2 text-gray-800">{typeof row.percentage === 'number' ? `${row.percentage}%` : '—'}</td>
                       </tr>
                     ))
                   )}
                 </tbody>
               </table>
+              </div>
             </div>
             <DialogFooter className="flex gap-2 sm:justify-end">
               <Button variant="outline" onClick={() => setShowAttempts(false)}>Close</Button>
