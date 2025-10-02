@@ -55,6 +55,20 @@ const StudentExams: React.FC = () => {
   const [attemptsSummary, setAttemptsSummary] = useState<{ trials: number; best?: number | null; last5?: number[]; trend?: 'improving'|'declining'|'flat'|null; target?: number | null }>({ trials: 0, best: null, last5: [], trend: null, target: null });
   const [progressLoadingId, setProgressLoadingId] = useState<string | null>(null);
 
+  // Sort by last attempt direction
+  const [sortLastAttempt, setSortLastAttempt] = useState<'recent_first' | 'recent_last'>('recent_first');
+
+  // Restore and persist sort choice
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('student_exams_sort_last_attempt');
+      if (saved === 'recent_first' || saved === 'recent_last') setSortLastAttempt(saved);
+    } catch {}
+  }, []);
+  useEffect(() => {
+    try { localStorage.setItem('student_exams_sort_last_attempt', sortLastAttempt); } catch {}
+  }, [sortLastAttempt]);
+
   // Helper to format seconds as HH:MM:SS and verbose tooltip
   const formatHMS = (sec?: number | null) => {
     const s = typeof sec === 'number' && isFinite(sec) ? Math.max(0, Math.floor(sec)) : null;
@@ -345,6 +359,38 @@ const StudentExams: React.FC = () => {
     return () => { cancelled = true; };
   }, [exams, token]);
 
+  // Build a sorted list based on last attempt timestamp
+  const sortedExams = React.useMemo(() => {
+    const list = [...exams];
+    const getLastAttemptTs = (e: ExamItem): number => {
+      const attendedAt = examAttendedMap[e.id];
+      let ts: number | null = null;
+      if (attendedAt) {
+        const t = Date.parse(attendedAt);
+        if (!Number.isNaN(t)) ts = t;
+      }
+      if (!ts && Array.isArray(e.attempts) && e.attempts.length > 0) {
+        // Use the most recent submitted_at in attempts array if available
+        let maxT = -Infinity;
+        for (const a of e.attempts) {
+          if (a?.submitted_at) {
+            const tt = Date.parse(a.submitted_at);
+            if (!Number.isNaN(tt) && tt > maxT) maxT = tt;
+          }
+        }
+        if (maxT !== -Infinity) ts = maxT;
+      }
+      return typeof ts === 'number' ? ts : -Infinity; // items with no attempts go last for recent_first
+    };
+    list.sort((ea, eb) => {
+      const ta = getLastAttemptTs(ea);
+      const tb = getLastAttemptTs(eb);
+      if (sortLastAttempt === 'recent_first') return tb - ta; // newest first
+      return ta - tb; // newest last
+    });
+    return list;
+  }, [exams, examAttendedMap, sortLastAttempt]);
+
   const renderExamsSection = () => {
     if (!currentCourse || !selectedCourse) return null;
     if (loadingExams) {
@@ -365,7 +411,7 @@ const StudentExams: React.FC = () => {
     return (
       <div className={`max-h-[28rem] overflow-auto p-2 transform transition-all duration-700 ${examsIn ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}`} style={{ transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)' }}>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-          {exams.map((e) => {
+          {sortedExams.map((e) => {
             const attendedAt = examAttendedMap[e.id];
             const isAttemptedCombined = !!e.hasAttempted || !!attendedAt;
             const attemptedClasses = 'border-emerald-400 bg-emerald-50 hover:border-emerald-500 hover:bg-emerald-100';
@@ -563,6 +609,19 @@ const StudentExams: React.FC = () => {
             <option value="all">All</option>
             <option value="attempted">Submitted</option>
             <option value="not_attempted">Not submitted</option>
+          </select>
+        </div>
+        {/* Sort by last attempt */}
+        <div className="inline-flex items-center gap-2">
+          <label htmlFor="exam-sort-last" className="text-xs text-gray-600 hidden sm:block">Sort by</label>
+          <select
+            id="exam-sort-last"
+            className="px-2 py-1.5 text-xs sm:text-sm border border-gray-200 rounded-md bg-white text-gray-700 hover:border-gray-300"
+            value={sortLastAttempt}
+            onChange={(e) => setSortLastAttempt(e.target.value as 'recent_first' | 'recent_last')}
+          >
+            <option value="recent_first">Last attempt (recent first)</option>
+            <option value="recent_last">Last attempt (recent last)</option>
           </select>
         </div>
       </div>
