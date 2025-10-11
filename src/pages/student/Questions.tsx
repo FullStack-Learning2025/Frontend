@@ -65,6 +65,8 @@ const StudentExams: React.FC = () => {
   const [loadingExams, setLoadingExams] = useState(false);
   const [loadingQuestions, setLoadingQuestions] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // Prep state shown after selecting exam and when starting a new attempt
+  const [preparingAttempt, setPreparingAttempt] = useState(false);
 
   // Timer
   const [remainingSec, setRemainingSec] = useState<number | null>(null);
@@ -109,6 +111,14 @@ const StudentExams: React.FC = () => {
   const [recordElapsedSec, setRecordElapsedSec] = useState<number>(0);
   const recordTimerRef = useRef<number | null>(null);
   const [canPlayRecorded, setCanPlayRecorded] = useState<boolean>(false);
+  // Feedback dialog state
+  const [feedbackOpen, setFeedbackOpen] = useState<boolean>(false);
+  const [feedbackQid, setFeedbackQid] = useState<string | null>(null);
+  const [feedbackMessage, setFeedbackMessage] = useState<string>('');
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState<boolean>(false);
+  // Centered hint modal
+  const [hintOpen, setHintOpen] = useState<boolean>(false);
+  const [hintText, setHintText] = useState<string>('');
   // Ensure stream attaches to live video when dialog opens
   useEffect(() => {
     try {
@@ -138,6 +148,13 @@ const StudentExams: React.FC = () => {
       return raw ? JSON.parse(raw) : null;
     } catch { return null; }
   };
+
+  // Stop the preparing attempt overlay once the exam has started
+  useEffect(() => {
+    if (examStarted) {
+      setPreparingAttempt(false);
+    }
+  }, [examStarted]);
   const isTwitterUrl = (url?: string) => !!url && /(twitter\.com|x\.com)\//i.test(url);
   const toTwitterEmbed = (url: string) => {
     // Use twitframe to embed any Tweet (including those with videos)
@@ -417,6 +434,13 @@ const StudentExams: React.FC = () => {
       }
     } catch {
       setExamContext(null);
+    }
+  }, [selectedExamId]);
+
+  // When a different exam is selected, immediately show loading overlay before fetch kicks in
+  useEffect(() => {
+    if (selectedExamId) {
+      setLoadingQuestions(true);
     }
   }, [selectedExamId]);
 
@@ -1283,6 +1307,35 @@ const StudentExams: React.FC = () => {
                     }
                   }}
                 >Answer with Video</Button>
+                {/* Report issue (feedback) */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!examStarted || submitted}
+                  onClick={() => {
+                    const currentQid = currentQuestions[0]?.id;
+                    if (!currentQid) return;
+                    setFeedbackQid(currentQid);
+                    setFeedbackMessage('');
+                    setFeedbackOpen(true);
+                  }}
+                >Give Feedback</Button>
+                {/* Show/Hide Hint */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!examStarted || submitted}
+                  onClick={() => {
+                    const q = currentQuestions[0];
+                    if (!q) return;
+                    if (!q.hint || String(q.hint).trim().length === 0) {
+                      toast({ title: 'No hint available', description: 'This question does not have a hint.', variant: 'default' });
+                      return;
+                    }
+                    setHintText(String(q.hint));
+                    setHintOpen(true);
+                  }}
+                >Show hint</Button>
                 {/* Go To dropdown */}
                 <div ref={gotoRef} className="relative">
                   <button
@@ -1606,13 +1659,7 @@ const StudentExams: React.FC = () => {
                       </div>
                       {/* Mark for review and Clear buttons removed */}
                     </div>
-                    {/* Hint */}
-                    {q.hint && (
-                      <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                        <span className="font-semibold mr-1">Hint:</span>
-                        <span>{q.hint}</span>
-                      </div>
-                    )}
+                    {/* Hint trigger removed here; use toolbar button */}
                     {renderOptions(q)}
                     {/* Bottom navigation below answers */}
                     <div className="mt-3 flex items-center justify-between">
@@ -1626,29 +1673,38 @@ const StudentExams: React.FC = () => {
                         <ChevronLeft size={16} /> Prev
                       </Button>
                       <div className="flex items-center gap-2">
-                        {answers[q.id]
-                          ? (
+                        {currentPage === pageCount ? (
+                          <Button
+                            size="sm"
+                            className="flex items-center gap-2"
+                            disabled={!examStarted || submitted}
+                            onClick={() => setShowSubmitConfirm(true)}
+                          >
+                            Submit
+                          </Button>
+                        ) : (
+                          answers[q.id] ? (
                             <Button
                               variant="outline"
                               size="sm"
                               className="flex items-center gap-1"
-                              disabled={!examStarted || submitted || currentPage === pageCount}
+                              disabled={!examStarted || submitted}
                               onClick={() => setCurrentPage(p => Math.min(pageCount, p + 1))}
                             >
                               Next <ChevronRight size={16} />
                             </Button>
-                          )
-                          : (
+                          ) : (
                             <Button
                               variant="secondary"
                               size="sm"
                               className="flex items-center gap-1"
-                              disabled={!examStarted || submitted || currentPage === pageCount}
+                              disabled={!examStarted || submitted}
                               onClick={() => setCurrentPage(p => Math.min(pageCount, p + 1))}
                             >
                               Skip
                             </Button>
-                          )}
+                          )
+                        )}
                       </div>
                     </div>
                     {/* Recorded preview */}
@@ -1702,7 +1758,7 @@ const StudentExams: React.FC = () => {
           </div>
           <DialogFooter className="flex gap-2 sm:justify-end">
             <Button variant="outline" onClick={() => setShowStartConfirm(false)}>Cancel</Button>
-            <Button onClick={() => { setShowStartConfirm(false); handleStartExam(); }} className="inline-flex items-center gap-2">
+            <Button onClick={() => { setShowStartConfirm(false); setPreparingAttempt(true); try { handleStartExam(); } finally { /* will be cleared when examStarted flips */ } }} className="inline-flex items-center gap-2">
               <PlayCircle size={18} /> Start
             </Button>
           </DialogFooter>
@@ -1855,6 +1911,17 @@ const StudentExams: React.FC = () => {
           </div>
         )}
 
+        {/* Loading/preparing overlay (non-portal, works in fullscreen) */}
+        {(loadingQuestions || preparingAttempt) && (
+          <div className="fixed inset-0 z-[58] flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/30" />
+            <div className="relative z-[59] rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl px-6 py-4 flex items-center gap-3">
+              <span className="h-5 w-5 rounded-full border-2 border-purple-300 border-t-transparent animate-spin" />
+              <div className="text-sm text-gray-700 dark:text-gray-200">{loadingQuestions ? 'Preparing exam… Loading questions' : 'Preparing attempt…'}</div>
+            </div>
+          </div>
+        )}
+
         {/* Submitting overlay while waiting for server response */}
         {submitting && !showResultDialog && !showSubmitConfirm && (
           <div className="fixed inset-0 z-[59] flex items-center justify-center">
@@ -1862,6 +1929,78 @@ const StudentExams: React.FC = () => {
             <div className="relative z-[60] rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl px-6 py-4 flex items-center gap-3">
               <span className="h-5 w-5 rounded-full border-2 border-purple-300 border-t-transparent animate-spin" />
               <div className="text-sm text-gray-700 dark:text-gray-200">Submitting… Please wait</div>
+            </div>
+          </div>
+        )}
+
+        {/* Hint Modal (centered) */}
+        {hintOpen && (
+          <div className="fixed inset-0 z-[64] flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setHintOpen(false)} />
+            <div className="relative z-[65] w-[95%] max-w-md rounded-xl border border-amber-200 bg-white dark:bg-gray-900 shadow-xl p-4">
+              <div className="text-base sm:text-lg font-semibold text-amber-900">Hint</div>
+              <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                {hintText}
+              </div>
+              <div className="mt-3 flex justify-end">
+                <Button onClick={() => setHintOpen(false)} size="sm">Close</Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Feedback Modal */}
+        {feedbackOpen && (
+          <div className="fixed inset-0 z-[65] flex items-center justify-center">
+            <div
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+              onClick={() => {
+                if (!feedbackSubmitting) {
+                  setFeedbackOpen(false);
+                  setFeedbackQid(null);
+                  setFeedbackMessage('');
+                }
+              }}
+            />
+            <div className="relative z-[66] w-[95%] max-w-md rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl p-4">
+              <div className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">Report issue</div>
+              <p className="mt-1 text-xs text-gray-600">Describe the problem with this question. We’ll review it.</p>
+              <textarea
+                className="mt-3 w-full min-h-[120px] rounded-md border border-gray-300 bg-white p-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-300"
+                placeholder="e.g. Option seems incorrect, or the question has a typo."
+                value={feedbackMessage}
+                onChange={(e) => setFeedbackMessage(e.target.value)}
+                disabled={feedbackSubmitting}
+              />
+              <div className="mt-3 flex items-center justify-end gap-2">
+                <Button variant="outline" disabled={feedbackSubmitting} onClick={() => { setFeedbackOpen(false); setFeedbackQid(null); setFeedbackMessage(''); }}>Cancel</Button>
+                <Button
+                  disabled={feedbackSubmitting || !feedbackMessage || feedbackMessage.trim().length < 3}
+                  onClick={async () => {
+                    if (!feedbackQid || !token) return;
+                    try {
+                      setFeedbackSubmitting(true);
+                      await axios.post(`${import.meta.env.VITE_BACKEND_URL}/api/questions/${feedbackQid}/feedback`, {
+                        message: feedbackMessage,
+                        examId: selectedExamId || null,
+                        meta: { page: currentPage }
+                      }, { headers: { Authorization: `Bearer ${token}` } });
+                      toast({ title: 'Thanks!', description: 'Your feedback has been submitted.' });
+                      setFeedbackOpen(false);
+                      setFeedbackQid(null);
+                      setFeedbackMessage('');
+                    } catch (e: any) {
+                      toast({ title: 'Error', description: e?.response?.data?.message || 'Failed to submit feedback.', variant: 'destructive' });
+                    } finally {
+                      setFeedbackSubmitting(false);
+                    }
+                  }}
+                  className="inline-flex items-center gap-2"
+                >
+                  {feedbackSubmitting && <span className="h-3 w-3 rounded-full border-2 border-purple-300 border-t-transparent animate-spin" />}
+                  Submit
+                </Button>
+              </div>
             </div>
           </div>
         )}
@@ -1904,6 +2043,17 @@ const StudentExams: React.FC = () => {
                         <div className="flex items-center justify-between"><span className="text-gray-500">Obtained Percentage</span><span className="font-medium">{pct}%</span></div>
                       </div>
                       <div className="mt-4 flex items-center justify-end gap-2">
+                        <Button
+                          onClick={async () => {
+                            try {
+                              if (document.fullscreenElement && (document as any).exitFullscreen) { await (document as any).exitFullscreen(); }
+                              else if ((document as any).webkitExitFullscreen) { (document as any).webkitExitFullscreen(); }
+                            } catch {}
+                            navigate('/student/progress');
+                          }}
+                        >
+                          View Progress
+                        </Button>
                         <Button
                           variant="outline"
                           onClick={async () => {

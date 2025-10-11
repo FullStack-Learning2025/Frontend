@@ -10,9 +10,12 @@ import {
   LogOut,
   Globe,
   X,
-  Upload
+  Upload,
+  Newspaper,
+  Trophy
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
+
 import { cn } from "@/lib/utils";
 import purplelogo from '../assets/ExamWalk Purple Logo.svg'
 import { useAuth } from "@/contexts/AuthContext";
@@ -179,8 +182,8 @@ const StudentLayoutInner = () => {
     ...(currentExam ? [
       { title: t.questions, icon: <FileText className="h-5 w-5" />, path: "/student/questions" },
     ] : []),
-    { title: t.blogs, icon: <FileText className="h-5 w-5" />, path: "/student/blogs" },
-    { title: 'Winning Question', icon: <FileText className="h-5 w-5" />, path: "/student/winningquestion" },
+    { title: t.blogs, icon: <Newspaper className="h-5 w-5" />, path: "/student/blogs" },
+    { title: 'Winning Question', icon: <Trophy className="h-5 w-5" />, path: "/student/winningquestion" },
     { title: 'Progress', icon: <TrendingUp className="h-5 w-5" />, path: "/student/progress" },
     { type: "divider" },
     { title: t.language, icon: <Globe className="h-5 w-5" />, isLanguageSelector: true },
@@ -259,6 +262,7 @@ const StudentLayoutInner = () => {
               {sidebarOpen ? <ChevronRight className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
             <div className="flex items-center space-x-2">
+
               {currentCourse && (
                 <span className="hidden sm:inline-flex max-w-[40vw] md:max-w-[28rem] items-center gap-2 text-xs sm:text-sm text-purple-800 bg-purple-50 border border-purple-200 rounded-full px-2.5 py-1 truncate" title={currentCourse.courseTitle}>
                   <span className="font-medium">Course:</span>
