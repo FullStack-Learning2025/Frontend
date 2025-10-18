@@ -13,6 +13,7 @@ import {
   X
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
+
 import { cn } from "@/lib/utils";
 import purplelogo from '../assets/ExamWalk Purple Logo.svg'
 import { useAuth } from "@/contexts/AuthContext";
@@ -372,6 +373,7 @@ const TeacherLayout = () => {
             </button>
             
             <div className="flex items-center space-x-2">
+
               <span className="text-sm text-gray-700" role="presentation">
                 {userProfile?.display_name || 'Teacher'}
               </span>

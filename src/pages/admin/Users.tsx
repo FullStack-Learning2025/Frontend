@@ -31,7 +31,6 @@ interface User {
   updated_at: string;
   role: string;
   status: "active" | "inactive";
-  level?: 'Beginner' | 'Intermediate' | 'Pro' | 'Master' | null;
 }
 
 const Users = () => {
@@ -165,7 +164,6 @@ const Users = () => {
               <TableHead className="text-xs sm:text-sm">{t.name || 'Name'}</TableHead>
               <TableHead className="text-xs sm:text-sm">{t.email || 'Email'}</TableHead>
               <TableHead className="text-xs sm:text-sm">{t.contact || 'Contact'}</TableHead>
-              <TableHead className="text-xs sm:text-sm">Level</TableHead>
               <TableHead className="text-xs sm:text-sm">{t.joinedDate || 'Joined Date'}</TableHead>
               <TableHead className="text-xs sm:text-sm">{t.status || 'Status'}</TableHead>
               <TableHead className="text-right text-xs sm:text-sm">{t.actions || 'Actions'}</TableHead>
@@ -174,7 +172,7 @@ const Users = () => {
           <TableBody>
             {filteredUsers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                   No users found
                 </TableCell>
               </TableRow>
@@ -204,15 +202,6 @@ const Users = () => {
                   </TableCell>
                   <TableCell>{user.email}</TableCell>
                   <TableCell>{user.contact_number}</TableCell>
-                  <TableCell>
-                    {user.level ? (
-                      <Badge variant="outline" className="border-purple-300 text-purple-700 bg-purple-50">
-                        {user.level}
-                      </Badge>
-                    ) : (
-                      <span className="text-xs text-gray-500">—</span>
-                    )}
-                  </TableCell>
                   <TableCell>{formatDate(user.created_at)}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">

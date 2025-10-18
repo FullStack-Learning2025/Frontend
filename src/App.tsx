@@ -39,6 +39,7 @@ import AdminPromos from './pages/admin/Promos';
 import AdminPromoDetail from './pages/admin/PromoDetail';
 import PrivacyPolicyAdmin from './pages/admin/PrivacyPolicy';
 import TermsConditionsAdmin from './pages/admin/TermsConditions';
+import AdminQuestionsFeedback from './pages/admin/QuestionsFeedback';
 
 // Teacher components
 import TeacherLayout from './layouts/TeacherLayout';
@@ -119,6 +120,7 @@ function App() {
                   <Route path="promos" element={<AdminPromos />} />
                   <Route path="promo-detail/:id" element={<AdminPromoDetail />} />
                   <Route path="create-promo" element={<AdminPromoDetail />} />
+                  <Route path="questions-feedback" element={<AdminQuestionsFeedback />} />
                   <Route path="privacy-policy" element={<PrivacyPolicyAdmin />} />
                   <Route path="terms-conditions" element={<TermsConditionsAdmin />} />
                 </Route>

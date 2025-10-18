@@ -235,8 +235,15 @@ const CreateQuestion = () => {
           }
         );
 
-        if (response.data?.data) {
-          const formattedQuestions = response.data.data.map((q: any, index: number) => {
+        const payload = response.data?.data;
+        const questionArray = Array.isArray(payload)
+          ? payload
+          : Array.isArray(payload?.items)
+            ? payload.items
+            : [];
+
+        if (questionArray.length > 0) {
+          const formattedQuestions = questionArray.map((q: any, index: number) => {
             // Handle options as array or object
             let choices;
             if (Array.isArray(q.options)) {
@@ -271,6 +278,21 @@ const CreateQuestion = () => {
           setQuestions(formattedQuestions);
           originalQuestionsRef.current = formattedQuestions.map(q => ({ ...q, choices: q.choices.map(c => ({ ...c })) }));
           setCurrentPage(1);
+        } else {
+          setQuestions([
+            {
+              id: "1",
+              text: "",
+              choices: [
+                { id: "c1", key: "A", text: "", isCorrect: false },
+                { id: "c2", key: "B", text: "", isCorrect: false },
+                { id: "c3", key: "C", text: "", isCorrect: false },
+                { id: "c4", key: "D", text: "", isCorrect: false }
+              ],
+              isNew: true
+            }
+          ]);
+          originalQuestionsRef.current = [];
         }
       } catch (error) {
         console.log(error);

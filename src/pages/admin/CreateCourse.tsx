@@ -390,9 +390,9 @@ const CreateCourse = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  {/* <label className="block text-sm font-medium text-gray-700 mb-2">
                     Categories
-                  </label>
+                  </label> */}
                   <div className="flex flex-wrap gap-2 mb-2">
                     {categories.map((category) => (
                       <div 
@@ -409,7 +409,7 @@ const CreateCourse = () => {
                       </div>
                     ))}
                   </div>
-                  <div className="flex gap-2">
+                  {/* <div className="flex gap-2">
                     <Input
                       placeholder="Add a category"
                       value={newCategory}
@@ -429,7 +429,7 @@ const CreateCourse = () => {
                     >
                       <Plus size={16} className="mr-1" /> Add
                     </Button>
-                  </div>
+                  </div> */}
                 </div>
 
                 {/* Rules */}

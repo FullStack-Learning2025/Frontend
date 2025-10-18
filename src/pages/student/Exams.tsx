@@ -1,11 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { BookOpen, CheckCircle2, FileText, XCircle, History } from 'lucide-react';
+import { CheckCircle2, GraduationCap, History } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { useStudentSession } from '@/contexts/StudentSessionContext';
 
 type EnrolledCourse = {
   courseId: string;
@@ -27,14 +28,10 @@ type ExamItem = {
   attempts?: Array<{ submitted_at: string; percentage: number }>;
 };
 
-const StudentCourses: React.FC = () => {
+const StudentExams: React.FC = () => {
   const { token } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [loading, setLoading] = useState<boolean>(false);
-  const [courses, setCourses] = useState<EnrolledCourse[]>([]);
-  const [examStats, setExamStats] = useState<Record<string, { total: number; attempted: number; unattempted: number }>>({});
-  const fetchedRef = useRef(false);
   // Embedded Exams tab state
   const [selectedCourse, setSelectedCourse] = useState<EnrolledCourse | null>(null);
   const [exams, setExams] = useState<ExamItem[]>([]);
@@ -42,15 +39,50 @@ const StudentCourses: React.FC = () => {
   const [examAttendedMap, setExamAttendedMap] = useState<Record<string, string>>({});
   // Only complexity filter retained; remove course/attempt filters
   const [examComplexity, setExamComplexity] = useState<'all' | 'Easy' | 'Medium' | 'Hard'>('all');
+  // Category filter (client-side based on API response)
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [availableCategories, setAvailableCategories] = useState<string[]>([]);
+  // Attempt filter (submitted vs not submitted)
+  const [attemptFilter, setAttemptFilter] = useState<'all' | 'attempted' | 'not_attempted'>('all');
   const [page, setPage] = useState<number>(1);
-  const [pageSize] = useState<number>(12);
+  const [pageSize, setPageSize] = useState<number>(12);
   const [lastPageCount, setLastPageCount] = useState<number>(0);
+  const [hasNext, setHasNext] = useState<boolean>(false);
+  const [hasPrev, setHasPrev] = useState<boolean>(false);
   const [showAttempts, setShowAttempts] = useState(false);
-  const [attemptsRows, setAttemptsRows] = useState<Array<{ date: string; percentage: number }>>([]);
-  const [attemptsExamTitle, setAttemptsExamTitle] = useState<string>('Attempts');
+  const [attemptsRows, setAttemptsRows] = useState<Array<{ date: string; total_questions?: number; correct?: number; wrong?: number; no_answer?: number; total_time_sec?: number | null; exam_time_sec?: number | null; percentage?: number | null }>>([]);
+  const [attemptsExamTitle, setAttemptsExamTitle] = useState<string>('Progress');
+  const [attemptsSummary, setAttemptsSummary] = useState<{ trials: number; best?: number | null; last5?: number[]; trend?: 'improving'|'declining'|'flat'|null; target?: number | null }>({ trials: 0, best: null, last5: [], trend: null, target: null });
+  const [progressLoadingId, setProgressLoadingId] = useState<string | null>(null);
 
-  // Animated master-detail state for course -> exams
-  const [view, setView] = useState<'grid' | 'toDetail' | 'detail' | 'toGrid'>('grid');
+  // Sort by last attempt direction
+  const [sortLastAttempt, setSortLastAttempt] = useState<'recent_first' | 'recent_last'>('recent_first');
+
+  // Restore and persist sort choice
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('student_exams_sort_last_attempt');
+      if (saved === 'recent_first' || saved === 'recent_last') setSortLastAttempt(saved);
+    } catch {}
+  }, []);
+  useEffect(() => {
+    try { localStorage.setItem('student_exams_sort_last_attempt', sortLastAttempt); } catch {}
+  }, [sortLastAttempt]);
+
+  // Helper to format seconds as HH:MM:SS and verbose tooltip
+  const formatHMS = (sec?: number | null) => {
+    const s = typeof sec === 'number' && isFinite(sec) ? Math.max(0, Math.floor(sec)) : null;
+    if (s == null) return { text: '—', title: '' };
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const r = s % 60;
+    const text = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${r.toString().padStart(2,'0')}`;
+    const title = `${h}h ${m}m ${r}s`;
+    return { text, title };
+  };
+
+  // Session-selected course
+  const { currentCourse, selectExam } = useStudentSession();
   const [examsIn, setExamsIn] = useState(false);
 
   // Reattempt confirmation dialog state
@@ -79,6 +111,8 @@ const StudentCourses: React.FC = () => {
         // update attended map immediately
         setExamAttendedMap((prev) => ({ ...prev, [e.id]: new Date().toISOString() }));
       } catch {}
+      // save selected exam in session (to reveal Questions tab)
+      selectExam({ examId: e.id, examTitle: e.title, courseId: selectedCourse?.courseId });
       navigate('/student/questions');
     } catch (error: any) {
       const msg = error?.response?.data?.message || error?.message || 'Failed to load questions.';
@@ -86,11 +120,30 @@ const StudentCourses: React.FC = () => {
     }
   };
 
+  // Load all categories for selected course from backend once
+  useEffect(() => {
+    const run = async () => {
+      const cid = selectedCourse?.courseId || currentCourse?.courseId;
+      if (!cid || !token) return;
+      try {
+        const res = await axios.get(`${import.meta.env.VITE_BACKEND_URL}/api/students/exam-categories`, {
+          params: { courseId: cid },
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const cats = Array.isArray(res.data?.data) ? res.data.data : (Array.isArray(res.data) ? res.data : []);
+        setAvailableCategories(cats);
+      } catch {}
+    };
+    run();
+  }, [selectedCourse, currentCourse, token]);
+
   // Helper to load exams for selected course with current complexity and pagination
   const loadExamsForCourse = async (c: EnrolledCourse, opts?: { resetPage?: boolean }) => {
     if (opts?.resetPage) setPage(1);
     const effectivePage = opts?.resetPage ? 1 : page;
     setLoadingExams(true);
+    // prepare enter animation
+    setExamsIn(false);
     try {
       const res = await axios.get(
         `${import.meta.env.VITE_BACKEND_URL}/api/students/get-all-exams`,
@@ -100,19 +153,19 @@ const StudentCourses: React.FC = () => {
             complexity: examComplexity,
             page: effectivePage,
             pageSize,
+            ...(selectedCategory && selectedCategory !== 'all' ? { category: selectedCategory } : {}),
           },
           headers: { Authorization: `Bearer ${token}` },
         }
       );
       const items = Array.isArray(res.data?.data) ? res.data.data : (Array.isArray(res.data) ? res.data : []);
-      setLastPageCount(items.length || 0);
       // Persist so Questions page can read context later
       try { localStorage.setItem('student_exams_list', JSON.stringify({ courseId: c.courseId, courseTitle: c.courseTitle, items })); } catch {}
       // Normalize to ExamItem[] similar to Exams page
       const normalized: ExamItem[] = (items.length && Array.isArray(items[0]?.exams))
         ? items.flatMap((teacher: any) => (teacher.exams || []).map((ex: any) => ({
             id: ex.id,
-            title: `${(ex.category || 'Exam')}`,
+            title: ex.title || (ex.category || 'Exam'),
             course_name: teacher.full_name || 'Teacher',
             status: ex.hasAttempted ? 'Attempted' : 'New',
             total_attempts: ex.hasAttempted ? 1 : 0,
@@ -129,7 +182,30 @@ const StudentCourses: React.FC = () => {
             created_at: ex.created_at || ex.createdAt,
             attempts: Array.isArray((ex as any).attempts) ? (ex as any).attempts : [],
           }));
-      setExams(normalized);
+
+      // Update available categories (union) using current page as fallback enrichment
+      try {
+        const pageCats = Array.from(new Set(normalized.map((e: any) => e.category).filter(Boolean)));
+        if (pageCats.length) {
+          setAvailableCategories((prev) => Array.from(new Set([...(prev || []), ...pageCats])));
+        }
+      } catch {}
+
+      // Apply attempt filter (category handled server-side)
+      const filtered = attemptFilter === 'all'
+        ? normalized
+        : attemptFilter === 'attempted'
+          ? normalized.filter((e: any) => !!e.hasAttempted)
+          : normalized.filter((e: any) => !e.hasAttempted);
+      // set pagination flags from backend response
+      const pagination = (res.data && (res.data.pagination || res.data.meta)) || null;
+      setHasNext(Boolean(pagination?.hasNextPage));
+      setHasPrev(Boolean(pagination?.hasPrevPage));
+
+      // compute last page count from filtered items
+      setLastPageCount(filtered.length || 0);
+
+      setExams(filtered);
       // Fetch exam attended timestamps for these exams
       try {
         const ids = normalized.map(x => x.id).filter(Boolean);
@@ -155,92 +231,70 @@ const StudentCourses: React.FC = () => {
       setExams([]);
     } finally {
       setLoadingExams(false);
+      // trigger enter animation after data loaded
+      requestAnimationFrame(() => setExamsIn(true));
     }
   };
 
-  // React to selection, complexity, and page changes
+  // React to complexity and page changes for current session selection
   useEffect(() => {
+    if (!currentCourse) return;
+    const c = { courseId: currentCourse.courseId, courseTitle: currentCourse.courseTitle } as EnrolledCourse;
+    setSelectedCourse(c);
+    loadExamsForCourse(c);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentCourse, examComplexity, page, pageSize]);
+
+  // Persist and react to category filter changes (refetch and apply)
+  useEffect(() => {
+    try { localStorage.setItem('student_exams_category_filter', selectedCategory); } catch {}
+    if (!selectedCourse) return;
+    // Re-load current page to apply filter and refresh categories if needed
+    loadExamsForCourse(selectedCourse);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCategory]);
+
+  // Restore category filter from storage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('student_exams_category_filter');
+      if (saved) setSelectedCategory(saved);
+    } catch {}
+  }, []);
+
+  // Persist + apply page size changes
+  useEffect(() => {
+    try { localStorage.setItem('student_exams_page_size', String(pageSize)); } catch {}
+    if (!selectedCourse) return;
+    // When page size changes, best UX is to reset to page 1 to avoid out-of-range page
+    loadExamsForCourse(selectedCourse, { resetPage: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageSize]);
+
+  // Restore page size on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('student_exams_page_size');
+      const n = saved ? parseInt(saved, 10) : NaN;
+      if (n && [10,25,50,100].includes(n)) setPageSize(n);
+    } catch {}
+  }, []);
+
+  // Persist + apply attempt filter changes
+  useEffect(() => {
+    try { localStorage.setItem('student_exams_attempt_filter', attemptFilter); } catch {}
     if (!selectedCourse) return;
     loadExamsForCourse(selectedCourse);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCourse, examComplexity, page]);
+  }, [attemptFilter]);
 
-  // Accent palettes for course cards (ensure classes are literal for Tailwind)
-  const palettes = [
-    {
-      border: 'border-amber-400', bg: 'bg-amber-50', hoverBorder: 'hover:border-amber-500', hoverBg: 'hover:bg-amber-100',
-      ring: 'ring-amber-300', icon: 'text-amber-600', text: 'text-amber-700', solidBg: 'bg-amber-100'
-    },
-    {
-      border: 'border-purple-400', bg: 'bg-purple-50', hoverBorder: 'hover:border-purple-500', hoverBg: 'hover:bg-purple-100',
-      ring: 'ring-purple-300', icon: 'text-purple-600', text: 'text-purple-700', solidBg: 'bg-purple-100'
-    },
-    {
-      border: 'border-sky-400', bg: 'bg-sky-50', hoverBorder: 'hover:border-sky-500', hoverBg: 'hover:bg-sky-100',
-      ring: 'ring-sky-300', icon: 'text-sky-600', text: 'text-sky-700', solidBg: 'bg-sky-100'
-    },
-    {
-      border: 'border-emerald-400', bg: 'bg-emerald-50', hoverBorder: 'hover:border-emerald-500', hoverBg: 'hover:bg-emerald-100',
-      ring: 'ring-emerald-300', icon: 'text-emerald-600', text: 'text-emerald-700', solidBg: 'bg-emerald-100'
-    },
-    {
-      border: 'border-rose-400', bg: 'bg-rose-50', hoverBorder: 'hover:border-rose-500', hoverBg: 'hover:bg-rose-100',
-      ring: 'ring-rose-300', icon: 'text-rose-600', text: 'text-rose-700', solidBg: 'bg-rose-100'
-    },
-    {
-      border: 'border-indigo-400', bg: 'bg-indigo-50', hoverBorder: 'hover:border-indigo-500', hoverBg: 'hover:bg-indigo-100',
-      ring: 'ring-indigo-300', icon: 'text-indigo-600', text: 'text-indigo-700', solidBg: 'bg-indigo-100'
-    },
-  ] as const;
-
+  // Restore attempt filter from storage
   useEffect(() => {
-    const fetchRecent = async () => {
-      if (fetchedRef.current) return; // hit once
-      fetchedRef.current = true;
-      setLoading(true);
-      try {
-        const res = await axios.get(
-          `${import.meta.env.VITE_BACKEND_URL}/api/students/recent-enrolled-course`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        const data = Array.isArray(res.data?.data) ? res.data.data : (Array.isArray(res.data) ? res.data : []);
-        const normalized: EnrolledCourse[] = data.map((d: any) => ({
-          courseId: d.courseId || d.course_id || d.enrolled_course || d.id,
-          courseTitle: d.courseTitle || d.course_title || d.title || 'Untitled Course',
-        }));
-        setCourses(normalized);
-        // After setting courses, fetch exam stats (total/attempted/unattempted) in batch
-        try {
-          const ids = normalized.map(c => c.courseId).filter(Boolean);
-          if (ids.length > 0) {
-            const res2 = await axios.get(
-              `${import.meta.env.VITE_BACKEND_URL}/api/students/get-all-exams`,
-              { params: { courseIds: ids.join(',') }, headers: { Authorization: `Bearer ${token}` } }
-            );
-            const payload = res2?.data?.data ?? res2?.data ?? [];
-            const map: Record<string, { total: number; attempted: number; unattempted: number }> = {};
-            (Array.isArray(payload) ? payload : []).forEach((row: any) => {
-              const cid = row.courseId || row.course_id || row.id;
-              const total = typeof row.totalExams === 'number' ? row.totalExams : (typeof row.examCount === 'number' ? row.examCount : 0);
-              const attempted = typeof row.attemptedExams === 'number' ? row.attemptedExams : 0;
-              const unattempted = typeof row.unattemptedExams === 'number' ? row.unattemptedExams : Math.max(0, total - attempted);
-              if (cid) map[cid] = { total, attempted, unattempted };
-            });
-            setExamStats(map);
-          }
-        } catch (e) {
-          // Non-fatal: ignore count errors
-        }
-      } catch (e: any) {
-        const msg = e?.response?.data?.message || e?.message || 'Failed to load enrolled courses.';
-        toast({ title: 'Error', description: msg, variant: 'destructive' });
-        setCourses([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchRecent();
-  }, [token, toast]);
+    try {
+      const saved = localStorage.getItem('student_exams_attempt_filter');
+      if (saved === 'attempted' || saved === 'not_attempted' || saved === 'all') setAttemptFilter(saved);
+    } catch {}
+  }, []);
 
   // Enrich attempted exams with percentage (limits concurrency and avoids unnecessary state updates)
   useEffect(() => {
@@ -305,350 +359,395 @@ const StudentCourses: React.FC = () => {
     return () => { cancelled = true; };
   }, [exams, token]);
 
-  return (
-    <div className="space-y-4 sm:space-y-6">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-bold text-purple-700">Your Courses</h1>
-        <p className="text-gray-600 mt-1">Recently enrolled courses are listed here.</p>
-      </div>
+  // Build a sorted list based on last attempt timestamp
+  const sortedExams = React.useMemo(() => {
+    const list = [...exams];
+    const getLastAttemptTs = (e: ExamItem): number => {
+      const attendedAt = examAttendedMap[e.id];
+      let ts: number | null = null;
+      if (attendedAt) {
+        const t = Date.parse(attendedAt);
+        if (!Number.isNaN(t)) ts = t;
+      }
+      if (!ts && Array.isArray(e.attempts) && e.attempts.length > 0) {
+        // Use the most recent submitted_at in attempts array if available
+        let maxT = -Infinity;
+        for (const a of e.attempts) {
+          if (a?.submitted_at) {
+            const tt = Date.parse(a.submitted_at);
+            if (!Number.isNaN(tt) && tt > maxT) maxT = tt;
+          }
+        }
+        if (maxT !== -Infinity) ts = maxT;
+      }
+      return typeof ts === 'number' ? ts : -Infinity; // items with no attempts go last for recent_first
+    };
+    list.sort((ea, eb) => {
+      const ta = getLastAttemptTs(ea);
+      const tb = getLastAttemptTs(eb);
+      if (sortLastAttempt === 'recent_first') return tb - ta; // newest first
+      return ta - tb; // newest last
+    });
+    return list;
+  }, [exams, examAttendedMap, sortLastAttempt]);
 
-      {/* Courses (single solid area — unified) */}
-      {(view === 'grid' || view === 'toDetail' || view === 'toGrid') && (
-        <div>
-        {loading ? (
-          <div className="flex items-center justify-center min-h-[160px]">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-              <p className="mt-4 text-gray-600">Loading your courses...</p>
-            </div>
+  const renderExamsSection = () => {
+    if (!currentCourse || !selectedCourse) return null;
+    if (loadingExams) {
+      return (
+        <div className="flex items-center justify-center min-h-[160px]">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+            <p className="mt-4 text-gray-600">Loading exams...</p>
           </div>
-        ) : courses.length === 0 ? (
-          <p className="text-sm text-gray-500">No enrolled courses found.</p>
-        ) : (
-          <div className="max-h-[24rem] overflow-auto pb-6">
-            {/* Courses as tab buttons */}
-            <div className="relative min-h-[260px] grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-3">
-            {courses
-              .filter(() => true)
-              .map((c, idx) => {
-              const p = palettes[idx % palettes.length];
-              const isSelected = selectedCourse?.courseId === c.courseId;
-              const stats = examStats[c.courseId] || { total: 0, attempted: 0, unattempted: 0 };
-              const isZero = (stats.unattempted || 0) === 0 && (stats.total || 0) > 0;
-              const hasUnattempted = (stats.unattempted || 0) > 0;
-              // Accent based on unattempted status (keep same color whether selected or not)
-              const baseBg = isZero ? 'bg-emerald-50' : 'bg-rose-50';
-              const hoverClasses = isZero ? 'hover:bg-emerald-100 hover:border-emerald-500' : 'hover:bg-rose-100 hover:border-rose-500';
-              // Animation transforms for master -> detail
-              const inDetailTransition = view === 'toDetail';
-              // Other cards: fly off-screen upward during transition; fall back from top when returning
-              const flyOthers = (!isSelected && inDetailTransition)
-                ? '-translate-y-32 opacity-0'
-                : (view === 'toGrid' ? '-translate-y-32 opacity-0' : 'translate-y-0 opacity-100');
-              // Selected card: smoothly fly to top-left without any size changes
-              const flySel = inDetailTransition && isSelected ? '-translate-x-32 -translate-y-16' : '';
-              // Pin during transition to top-left for seamless movement
-              const pinTopLeft = inDetailTransition && isSelected ? 'absolute top-4 left-4 z-20 pointer-events-none' : '';
-              return (
+        </div>
+      );
+    }
+    if (exams.length === 0) {
+      return (
+        <div className="text-center text-sm text-gray-500 py-6">No exams have been generated for this course yet.</div>
+      );
+    }
+    return (
+      <div className={`max-h-[28rem] overflow-auto p-2 transform transition-all duration-700 ${examsIn ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}`} style={{ transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)' }}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+          {sortedExams.map((e) => {
+            const attendedAt = examAttendedMap[e.id];
+            const isAttemptedCombined = !!e.hasAttempted || !!attendedAt;
+            const attemptedClasses = 'border-emerald-400 bg-emerald-50 hover:border-emerald-500 hover:bg-emerald-100';
+            const unattemptedClasses = 'border-rose-400 bg-rose-50 hover:border-rose-500 hover:bg-rose-100';
+            const cardClasses = isAttemptedCombined ? attemptedClasses : unattemptedClasses;
+            const createdAt = e.created_at ? new Date(e.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null;
+            return (
               <button
-                key={c.courseId}
+                key={e.id}
                 type="button"
-                onClick={() => {
-                  // Animated enter detail
-                  setSelectedCourse(c);
-                  setPage(1);
-                  setView('toDetail');
-                  void loadExamsForCourse(c, { resetPage: true });
-                  window.setTimeout(() => {
-                    setView('detail');
-                    setExamsIn(false);
-                    window.requestAnimationFrame(() => setExamsIn(true));
-                  }, 400);
+                onClick={async () => {
+                  if (isAttemptedCombined) {
+                    setPendingExam(e);
+                    setShowReattemptConfirm(true);
+                    return;
+                  }
+                  await openExam(e);
                 }}
-                className={`group text-left mx-auto w-full max-w-[420px] flex flex-col gap-2 rounded-xl border ${isZero ? 'border-emerald-400' : 'border-rose-400'} ${baseBg} ${isSelected ? 'shadow-none' : 'shadow-sm'} px-4 py-3 transition cursor-pointer hover:-translate-y-0.5 hover:shadow-md ${hoverClasses} transform duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform ${pinTopLeft} ${flyOthers} ${flySel}`}
+                className={`text-left mx-auto w-full max-w-[420px] flex flex-col gap-2 rounded-xl border transition px-4 py-2 ${cardClasses} hover:-translate-y-0.5 hover:shadow-md`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="truncate pr-1 text-sm sm:text-base font-medium text-gray-800">{c.courseTitle}</div>
+                    <div className="truncate pr-1 text-sm sm:text-base font-medium text-gray-800">{e.title}</div>
+                    {e.category && (
+                      <div className="text-xs text-gray-600 mt-0.5 truncate">{e.category}</div>
+                    )}
+                    {e.course_name && (
+                      <div className="text-xs text-gray-500 mt-0.5 truncate">By {e.course_name}</div>
+                    )}
                     <div className="mt-1 flex flex-wrap items-center gap-2">
-                      <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs px-2 py-0.5 rounded-full border border-green-500 text-green-700 bg-green-50">
-                        <CheckCircle2 size={14} /> Enrolled
-                      </span>
-                      <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs px-2 py-0.5 rounded-full border border-purple-300 text-purple-700 bg-purple-50">
-                        <FileText size={14} /> Exams: {stats.total}
-                      </span>
-                      <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs px-2 py-0.5 rounded-full border border-emerald-200 text-emerald-700 bg-emerald-50">
-                        Attempted: {stats.attempted}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <div className="flex flex-col items-end justify-center">
-                      <div className={`leading-none text-3xl sm:text-4xl font-black tracking-tight tabular-nums ${isZero ? 'text-emerald-600' : 'text-rose-700'} drop-shadow-sm`}>
-                        {stats.unattempted}
-                      </div>
-                      <div className={`mt-1 text-[11px] sm:text-xs font-semibold uppercase tracking-wide ${isZero ? 'text-emerald-700' : 'text-rose-700'}`}>Unattempted Exams</div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Hover/selected response */}
-                <div className={`mt-1 text-xs ${isZero ? 'text-emerald-700' : 'text-rose-700'} ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition`}>
-                  {isSelected ? 'Viewing exams' : (hasUnattempted ? 'View exams' : 'All attempted')}
-                </div>
-              </button>
-              );})}
-            </div>
-          </div>
-        )}
-        </div>
-      )}
-
-      {/* Animated Detail view: back arrow + shrunk card */}
-      {view === 'detail' && selectedCourse && (
-        <div>
-          <div className="flex items-start gap-3">
-            {/* Back arrow */}
-            <button
-              type="button"
-              onClick={() => {
-                setView('toGrid');
-                setExamsIn(false);
-                window.setTimeout(() => {
-                  setSelectedCourse(null);
-                  setView('grid');
-                }, 500);
-              }}
-              className="group inline-flex items-center gap-2 text-purple-700 hover:text-purple-800 transition-colors"
-              aria-label="Back to courses"
-            >
-              <svg viewBox="0 0 46.032 46.033" className="w-10 h-10 -ml-1 transition-transform duration-300 ease-out group-hover:-translate-x-0.5" aria-hidden="true">
-                <path d="M8.532,18.531l8.955-8.999c-0.244-0.736-0.798-1.348-1.54-1.653c-1.01-0.418-2.177-0.185-2.95,0.591L1.047,20.479 c-1.396,1.402-1.396,3.67,0,5.073l11.949,12.01c0.771,0.775,1.941,1.01,2.951,0.592c0.742-0.307,1.295-0.918,1.54-1.652l-8.956-9 C6.07,25.027,6.071,21.003,8.532,18.531z" fill="currentColor" />
-                <path d="M45.973,31.64c-1.396-5.957-5.771-14.256-18.906-16.01v-5.252c0-1.095-0.664-2.082-1.676-2.5 c-0.334-0.138-0.686-0.205-1.033-0.205c-0.705,0-1.398,0.276-1.917,0.796L10.49,20.479c-1.396,1.402-1.396,3.669-0.001,5.073 l11.95,12.009c0.517,0.521,1.212,0.797,1.92,0.797c0.347,0,0.697-0.066,1.031-0.205c1.012-0.418,1.676-1.404,1.676-2.5V30.57 c4.494,0.004,10.963,0.596,15.564,3.463c0.361,0.225,0.77,0.336,1.176,0.336c0.457,0,0.91-0.139,1.297-0.416 C45.836,33.429,46.18,32.515,45.973,31.64z" fill="currentColor" />
-              </svg>
-              <span className="text-sm font-medium">Back</span>
-            </button>
-            {/* Selected course card (pinned) - keep same color scheme as grid, no shrink */}
-            {(() => {
-              const selStats = examStats[selectedCourse.courseId] || { total: 0, attempted: 0, unattempted: 0 };
-              const selZero = (selStats.unattempted || 0) === 0 && (selStats.total || 0) > 0;
-              const bgCls = selZero ? 'bg-emerald-50' : 'bg-rose-50';
-              const borderCls = selZero ? 'border-emerald-400' : 'border-rose-400';
-              const accentText = selZero ? 'text-emerald-700' : 'text-rose-700';
-              return (
-                <div className={`rounded-xl ${bgCls} px-4 py-3 border ${borderCls}`}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="truncate pr-1 text-sm sm:text-base font-medium text-gray-800">{selectedCourse.courseTitle}</div>
-                      <div className="mt-1 flex flex-wrap items-center gap-2">
-                        <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs px-2 py-0.5 rounded-full border border-green-500 text-green-700 bg-green-50">
-                          <CheckCircle2 size={14} /> Enrolled
+                      {createdAt && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 text-gray-700 px-2 py-0.5 text-[11px] sm:text-xs">
+                          Created: {createdAt}
                         </span>
-                        <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs px-2 py-0.5 rounded-full border border-purple-300 text-purple-700 bg-purple-50">
-                          <FileText size={14} /> Exams: {selStats.total}
+                      )}
+                      {e.complexity && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-purple-50 text-purple-700 px-2 py-0.5 text-[11px] sm:text-xs">
+                          Complexity: {e.complexity}
                         </span>
-                      </div>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <div className={`leading-none text-3xl sm:text-4xl font-black tracking-tight tabular-nums ${accentText} drop-shadow-sm`}>
-                        {(selStats.unattempted ?? 0)}
-                      </div>
-                      <div className={`mt-1 text-[11px] sm:text-xs font-semibold uppercase tracking-wide ${accentText}`}>Unattempted Exams</div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
-
-          {/* Complexity filter + pagination */}
-          <div className="mt-4 flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between">
-            <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden">
-              {(['all','Easy','Medium','Hard'] as const).map(val => (
-                <button
-                  key={val}
-                  type="button"
-                  onClick={() => { setExamComplexity(val); setPage(1); }}
-                  className={`px-3 py-1.5 text-xs sm:text-sm ${examComplexity === val ? 'bg-purple-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'} ${val !== 'all' ? 'border-l border-gray-200' : ''}`}
-                >{val === 'all' ? 'All' : val}</button>
-              ))}
-            </div>
-            <div className="flex items-center justify-end gap-2 px-1">
-              <button type="button" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1} className={`px-3 py-1.5 text-xs rounded-md border ${page <= 1 ? 'text-gray-400 border-gray-200 bg-gray-50' : 'text-gray-700 border-gray-200 hover:bg-gray-50'}`}>Prev</button>
-              <span className="text-xs text-gray-600">Page {page}</span>
-              <button type="button" onClick={() => setPage(p => p + 1)} disabled={lastPageCount < pageSize} className={`px-3 py-1.5 text-xs rounded-md border ${lastPageCount < pageSize ? 'text-gray-400 border-gray-200 bg-gray-50' : 'text-gray-700 border-gray-200 hover:bg-gray-50'}`}>Next</button>
-            </div>
-          </div>
-
-          {/* Exams list emerging from below */}
-          {loadingExams ? (
-            <div className="flex items-center justify-center min-h-[160px]">
-              <div className="text-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-                <p className="mt-4 text-gray-600">Loading exams...</p>
-              </div>
-            </div>
-          ) : exams.length === 0 ? (
-            <div className="text-center text-sm text-gray-500 py-6">No exams have been generated for this course yet.</div>
-          ) : (
-            <div className={`max-h-[28rem] overflow-auto p-2 transform transition-all duration-700 ${examsIn ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}`} style={{ transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)' }}>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-              {exams
-                .map((e) => {
-                const attendedAt = examAttendedMap[e.id];
-                const isAttemptedCombined = !!e.hasAttempted || !!attendedAt;
-                const attemptedClasses = 'border-emerald-400 bg-emerald-50 hover:border-emerald-500 hover:bg-emerald-100';
-                const unattemptedClasses = 'border-rose-400 bg-rose-50 hover:border-rose-500 hover:bg-rose-100';
-                const cardClasses = isAttemptedCombined ? attemptedClasses : unattemptedClasses;
-                const createdAt = e.created_at ? new Date(e.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null;
-                return (
-                  <button
-                    key={e.id}
-                    type="button"
-                    onClick={async () => {
-                      if (isAttemptedCombined) {
-                        setPendingExam(e);
-                        setShowReattemptConfirm(true);
-                        return;
-                      }
-                      await openExam(e);
-                    }}
-                    className={`text-left mx-auto w-full max-w-[420px] flex flex-col gap-2 rounded-xl border transition px-4 py-2 ${cardClasses} hover:-translate-y-0.5 hover:shadow-md`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="truncate pr-1 text-sm sm:text-base font-medium text-gray-800">{e.title}</div>
-                        {e.course_name && (
-                          <div className="text-xs text-gray-500 mt-0.5 truncate">By {e.course_name}</div>
-                        )}
-                        <div className="mt-1 flex flex-wrap items-center gap-2">
-                          {createdAt && (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 text-gray-700 px-2 py-0.5 text-[11px] sm:text-xs">
-                              Created: {createdAt}
-                            </span>
-                          )}
-                          {e.complexity && (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-purple-50 text-purple-700 px-2 py-0.5 text-[11px] sm:text-xs">
-                              Complexity: {e.complexity}
-                            </span>
-                          )}
-                          {isAttemptedCombined ? (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 px-2 py-0.5 text-[11px] sm:text-xs">
-                              {attendedAt
-                                ? `Attempted: ${new Date(attendedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
-                                : 'Attempted'}
+                      )}
+                      {isAttemptedCombined ? (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 px-2 py-0.5 text-[11px] sm:text-xs">
+                          {attendedAt
+                            ? `Attempted: ${new Date(attendedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                            : 'Attempted'}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 text-rose-700 px-2 py-0.5 text-[11px] sm:text-xs">
+                          Not Attempted
+                        </span>
+                      )}
+                      {true && (
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            (async () => {
+                              // open modal immediately with loading state
+                              setAttemptsExamTitle(`${e.title || 'Exam'} – Progress`);
+                              setAttemptsRows([]);
+                              setAttemptsSummary({ trials: 0, best: null, last5: [], trend: null, target: null });
+                              setShowAttempts(true);
+                              setProgressLoadingId(e.id);
+                              try {
+                                const res = await axios.get(`${import.meta.env.VITE_BACKEND_URL}/api/students/exam-attempts`, {
+                                  params: { examId: e.id },
+                                  headers: { Authorization: `Bearer ${token}` },
+                                });
+                                const data = res?.data?.data ?? res?.data;
+                                const title = data?.examTitle || e.title || 'Progress';
+                                setAttemptsExamTitle(`${title} – Progress`);
+                                const rows = Array.isArray(data?.attempts) ? data.attempts.map((a: any) => ({
+                                  date: a.submitted_at ? new Date(a.submitted_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) : '-',
+                                  total_questions: a.total_questions ?? undefined,
+                                  correct: a.correct_count ?? undefined,
+                                  wrong: a.wrong_count ?? undefined,
+                                  no_answer: a.no_answer_count ?? undefined,
+                                  total_time_sec: a.total_time_sec ?? null,
+                                  exam_time_sec: a.exam_time_sec ?? null,
+                                  percentage: a.percentage ?? null,
+                                })) : [];
+                                setAttemptsRows(rows);
+                                setAttemptsSummary({
+                                  trials: Number(data?.trials) || rows.length,
+                                  best: typeof data?.bestAttempt?.percentage === 'number' ? data.bestAttempt.percentage : (rows.length ? Math.max(...rows.map(r => r.percentage ?? -1)) : null),
+                                  last5: Array.isArray(data?.last5) ? data.last5 : rows.slice(0,5).map(r => r.percentage || 0),
+                                  trend: (data?.trend === 'improving' || data?.trend === 'declining' || data?.trend === 'flat') ? data.trend : null,
+                                  target: typeof data?.target === 'number' ? data.target : null,
+                                });
+                              } catch (err: any) {
+                                toast({ title: 'Error', description: err?.response?.data?.error || 'Failed to load progress.', variant: 'destructive' });
+                              } finally { setProgressLoadingId(null); }
+                            })();
+                          }}
+                          onKeyDown={(ev) => {
+                            if (ev.key === 'Enter' || ev.key === ' ') {
+                              (ev.currentTarget as any).click();
+                              ev.preventDefault();
+                            }
+                          }}
+                          className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-purple-50 text-purple-700 px-2 py-0.5 text-[11px] sm:text-xs hover:border-purple-300 hover:bg-purple-100 cursor-pointer"
+                          title="View progress details"
+                        >
+                          {progressLoadingId === e.id ? (
+                            <span className="inline-flex items-center gap-2">
+                              <span className="h-3 w-3 rounded-full border-2 border-purple-300 border-t-transparent animate-spin"></span>
+                              Loading
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 text-rose-700 px-2 py-0.5 text-[11px] sm:text-xs">
-                              Not Attempted
-                            </span>
+                            <>
+                              <History size={14} /> Progress
+                            </>
                           )}
-                          {/* Attempts history trigger */}
-                          {Array.isArray(e.attempts) && e.attempts.length > 0 && (
-                            <span
-                              role="button"
-                              tabIndex={0}
-                              onClick={(ev) => {
-                                ev.stopPropagation();
-                                const rows = e.attempts!.map((a) => ({
-                                  date: new Date(a.submitted_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }),
-                                  percentage: a.percentage ?? 0,
-                                }));
-                                setAttemptsExamTitle(`${e.title} – Attempts`);
-                                setAttemptsRows(rows);
-                                setShowAttempts(true);
-                              }}
-                              onKeyDown={(ev) => {
-                                if (ev.key === 'Enter' || ev.key === ' ') {
-                                  (ev.currentTarget as any).click();
-                                  ev.preventDefault();
-                                }
-                              }}
-                              className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-purple-50 text-purple-700 px-2 py-0.5 text-[11px] sm:text-xs hover:border-purple-300 hover:bg-purple-100 cursor-pointer"
-                              title="View attempt history"
-                            >
-                              <History size={14} /> History
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="shrink-0">
-                        <div className="h-16 w-24 rounded-md bg-gray-100 border border-gray-200 overflow-hidden flex items-center justify-center">
-                          <FileText className="h-5 w-5 text-gray-400" />
-                        </div>
-                      </div>
+                        </span>
+                      )}
                     </div>
-                    <div className="flex items-center justify-between mt-auto text-xs text-gray-500">
-                      <div className="flex items-center gap-2"></div>
-                      <span className="flex items-center gap-1">
-                        <CheckCircle2 size={14} /> Questions: {e.total_questions ?? 0}
-                      </span>
+                  </div>
+                  <div className="shrink-0">
+                    <div className="h-16 w-24 rounded-md bg-gray-100 border border-gray-200 overflow-hidden flex items-center justify-center">
+                      <GraduationCap className="h-10 w-10 text-gray-600" />
                     </div>
-                  </button>
-                );
-              })}
-              </div>
-            </div>
-          )}
+                  </div>
+                </div>
+                <div className="flex items-center justify-between mt-auto text-xs text-gray-500">
+                  <div className="flex items-center gap-2"></div>
+                  <span className="flex items-center gap-1">
+                    <CheckCircle2 size={14} /> Questions: {e.total_questions ?? 0}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex flex-col gap-2">
+        <h1 className="text-2xl font-bold text-purple-700">Exams</h1>
+        {currentCourse ? (
+          <p className="text-gray-600 mt-1">You are viewing exams for <span className="font-medium text-purple-800">{currentCourse.courseTitle}</span>.</p>
+        ) : (
+          <p className="text-gray-600 mt-1">Please select a course from the Dashboard to view exams.</p>
+        )}
+      </div>
+
+      {currentCourse && selectedCourse && (
+        <div className="flex items-start gap-3">
+          <div className="inline-flex items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-3 py-1 text-purple-800">
+            <span className="text-sm sm:text-base font-semibold">Exams – {selectedCourse.courseTitle}</span>
+          </div>
         </div>
       )}
-      {/* Reattempt confirmation modal */}
-      <Dialog open={showReattemptConfirm} onOpenChange={setShowReattemptConfirm}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Reattempt exam?</DialogTitle>
-            <DialogDescription>
-              Starting a new attempt will open the same exam questions again.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="flex gap-2 sm:justify-end">
-            <Button variant="outline" onClick={() => { setShowReattemptConfirm(false); setPendingExam(null); }}>Cancel</Button>
-            <Button onClick={async () => {
-              const e = pendingExam; setShowReattemptConfirm(false); setPendingExam(null);
-              if (e) await openExam(e);
-            }}>Start new attempt</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
-      {/* Attempts history modal */}
-      <Dialog open={showAttempts} onOpenChange={setShowAttempts}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{attemptsExamTitle}</DialogTitle>
-            <DialogDescription>All your attempts for this exam</DialogDescription>
-          </DialogHeader>
-          <div className="mt-2 overflow-hidden rounded-lg border border-gray-200">
-            <table className="min-w-full divide-y divide-gray-200 text-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-2 text-left font-semibold text-gray-700">Attempt Date & Time</th>
-                  <th className="px-4 py-2 text-left font-semibold text-gray-700">Percentage</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 bg-white">
-                {attemptsRows.length === 0 ? (
+    {/* Complexity filter + pagination */}
+    <div className="mt-4 flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between">
+      <div className="flex items-center gap-3">
+        <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden">
+          {(['all','Easy','Medium','Hard'] as const).map(val => (
+            <button
+              key={val}
+              type="button"
+              onClick={() => { setExamComplexity(val); setPage(1); }}
+              className={`px-3 py-1.5 text-xs sm:text-sm ${examComplexity === val ? 'bg-purple-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'} ${val !== 'all' ? 'border-l border-gray-200' : ''}`}
+            >{val === 'all' ? 'All' : val}</button>
+          ))}
+        </div>
+        {/* Category filter dropdown */}
+        <div className="inline-flex items-center gap-2">
+          <label htmlFor="exam-category" className="text-xs text-gray-600 hidden sm:block">Category</label>
+          <select
+            id="exam-category"
+            className="px-2 py-1.5 text-xs sm:text-sm border border-gray-200 rounded-md bg-white text-gray-700 hover:border-gray-300"
+            value={selectedCategory}
+            onChange={(e) => { setSelectedCategory(e.target.value); }}
+          >
+            <option value="all">All</option>
+            {availableCategories.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </div>
+        {/* Attempt status filter */}
+        <div className="inline-flex items-center gap-2">
+          <label htmlFor="exam-attempt" className="text-xs text-gray-600 hidden sm:block">Status</label>
+          <select
+            id="exam-attempt"
+            className="px-2 py-1.5 text-xs sm:text-sm border border-gray-200 rounded-md bg-white text-gray-700 hover:border-gray-300"
+            value={attemptFilter}
+            onChange={(e) => setAttemptFilter(e.target.value as any)}
+          >
+            <option value="all">All</option>
+            <option value="attempted">Submitted</option>
+            <option value="not_attempted">Not submitted</option>
+          </select>
+        </div>
+        {/* Sort by last attempt */}
+        <div className="inline-flex items-center gap-2">
+          <label htmlFor="exam-sort-last" className="text-xs text-gray-600 hidden sm:block">Sort by</label>
+          <select
+            id="exam-sort-last"
+            className="px-2 py-1.5 text-xs sm:text-sm border border-gray-200 rounded-md bg-white text-gray-700 hover:border-gray-300"
+            value={sortLastAttempt}
+            onChange={(e) => setSortLastAttempt(e.target.value as 'recent_first' | 'recent_last')}
+          >
+            <option value="recent_first">Last attempt (recent first)</option>
+            <option value="recent_last">Last attempt (recent last)</option>
+          </select>
+        </div>
+      </div>
+      <div className="flex items-center justify-end gap-2 px-1">
+        {/* Page size selector */}
+        <div className="inline-flex items-center gap-2 mr-2">
+          <label htmlFor="exam-page-size" className="text-xs text-gray-600 hidden sm:block">Per page</label>
+          <select
+            id="exam-page-size"
+            className="px-2 py-1.5 text-xs sm:text-sm border border-gray-200 rounded-md bg-white text-gray-700 hover:border-gray-300"
+            value={pageSize}
+            onChange={(e) => {
+              const n = parseInt(e.target.value, 10);
+              if ([10,25,50,100].includes(n)) {
+                setPageSize(n);
+                setPage(1);
+              }
+            }}
+          >
+            {[10,25,50,100].map(n => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+        </div>
+        <button type="button" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={!hasPrev} className={`px-3 py-1.5 text-xs rounded-md border ${!hasPrev ? 'text-gray-400 border-gray-200 bg-gray-50' : 'text-gray-700 border-gray-200 hover:bg-gray-50'}`}>Prev</button>
+        <span className="text-xs text-gray-600">Page {page}</span>
+        <button type="button" onClick={() => setPage(p => p + 1)} disabled={!hasNext} className={`px-3 py-1.5 text-xs rounded-md border ${!hasNext ? 'text-gray-400 border-gray-200 bg-gray-50' : 'text-gray-700 border-gray-200 hover:bg-gray-50'}`}>Next</button>
+      </div>
+    </div>
+
+    {/* Exams list emerging from below */}
+    {renderExamsSection()}
+
+      <>
+        {/* Reattempt confirmation modal */}
+        <Dialog open={showReattemptConfirm} onOpenChange={setShowReattemptConfirm}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Reattempt exam?</DialogTitle>
+              <DialogDescription>
+                Starting a new attempt will open the same exam questions again.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="flex gap-2 sm:justify-end">
+              <Button variant="outline" onClick={() => { setShowReattemptConfirm(false); setPendingExam(null); }}>Cancel</Button>
+              <Button onClick={async () => {
+                const e = pendingExam; setShowReattemptConfirm(false); setPendingExam(null);
+                if (e) await openExam(e);
+              }}>Start new attempt</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Attempts history modal */}
+        <Dialog open={showAttempts} onOpenChange={setShowAttempts}>
+          <DialogContent className="sm:max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>{attemptsExamTitle}</DialogTitle>
+              <DialogDescription>Progress across your attempts for this exam</DialogDescription>
+            </DialogHeader>
+            {/* Summary Row */}
+            <div className="mt-2 flex flex-wrap gap-2 text-xs sm:text-sm">
+              <span className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 text-gray-700 px-2 py-0.5">Trials: {attemptsSummary.trials}</span>
+              {typeof attemptsSummary.best === 'number' && <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 px-2 py-0.5">Best: {attemptsSummary.best}%</span>}
+              {attemptsSummary.last5 && attemptsSummary.last5.length > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-purple-50 text-purple-700 px-2 py-0.5">Last 5: {attemptsSummary.last5.join(', ')}%</span>
+              )}
+              {attemptsSummary.trend && (
+                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 ${attemptsSummary.trend === 'improving' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : attemptsSummary.trend === 'declining' ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-gray-200 bg-gray-50 text-gray-700'}`}>Trend: {attemptsSummary.trend}</span>
+              )}
+              {typeof attemptsSummary.target === 'number' && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 text-blue-700 px-2 py-0.5">Target: {attemptsSummary.target}%</span>
+              )}
+            </div>
+            <div className="mt-2 overflow-hidden rounded-lg border border-gray-200">
+              {progressLoadingId && (
+                <div className="flex items-center justify-center py-10">
+                  <span className="h-6 w-6 rounded-full border-2 border-purple-300 border-t-transparent animate-spin mr-2"></span>
+                  <span className="text-sm text-gray-600">Loading progress...</span>
+                </div>
+              )}
+              <div className="max-h-[60vh] overflow-y-auto">
+              <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <thead className="bg-gray-50">
                   <tr>
-                    <td className="px-4 py-3 text-gray-500" colSpan={2}>No attempts yet.</td>
+                    <th className="px-4 py-2 text-left font-semibold text-gray-700">Attempt Date & Time</th>
+                    <th className="px-4 py-2 text-left font-semibold text-gray-700">Total Qs</th>
+                    <th className="px-4 py-2 text-left font-semibold text-gray-700">Correct</th>
+                    <th className="px-4 py-2 text-left font-semibold text-gray-700">Wrong</th>
+                    <th className="px-4 py-2 text-left font-semibold text-gray-700">No Answer</th>
+                    <th className="px-4 py-2 text-left font-semibold text-gray-700">Attempt Time (HH:MM:SS)</th>
+                    <th className="px-4 py-2 text-left font-semibold text-gray-700">Exam Time (HH:MM:SS)</th>
+                    <th className="px-4 py-2 text-left font-semibold text-gray-700">Percentage</th>
                   </tr>
-                ) : (
-                  attemptsRows.map((row, idx) => (
-                    <tr key={idx} className="hover:bg-purple-50">
-                      <td className="px-4 py-2 text-gray-800">{row.date}</td>
-                      <td className="px-4 py-2 text-gray-800">{row.percentage}%</td>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {attemptsRows.length === 0 ? (
+                    <tr>
+                      <td className="px-4 py-3 text-gray-500" colSpan={8}>No attempts yet.</td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-          <DialogFooter className="flex gap-2 sm:justify-end">
-            <Button variant="outline" onClick={() => setShowAttempts(false)}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+                  ) : (
+                    attemptsRows.map((row, idx) => (
+                      <tr key={idx} className="hover:bg-purple-50">
+                        <td className="px-4 py-2 text-gray-800">{row.date}</td>
+                        <td className="px-4 py-2 text-gray-800">{row.total_questions ?? '—'}</td>
+                        <td className="px-4 py-2 text-gray-800">{row.correct ?? '—'}</td>
+                        <td className="px-4 py-2 text-gray-800">{row.wrong ?? '—'}</td>
+                        <td className="px-4 py-2 text-gray-800">{row.no_answer ?? '—'}</td>
+                        {(() => { const f = formatHMS(row.total_time_sec ?? null); return (<td className="px-4 py-2 text-gray-800"><span title={f.title}>{f.text}</span></td>); })()}
+                        {(() => { const f = formatHMS(row.exam_time_sec ?? null); return (<td className="px-4 py-2 text-gray-800"><span title={f.title}>{f.text}</span></td>); })()}
+                        <td className="px-4 py-2 text-gray-800">{typeof row.percentage === 'number' ? `${row.percentage}%` : '—'}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+              </div>
+            </div>
+            <DialogFooter className="flex gap-2 sm:justify-end">
+              <Button variant="outline" onClick={() => setShowAttempts(false)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </>
     </div>
   );
 };
 
-export default StudentCourses;
+export default StudentExams;

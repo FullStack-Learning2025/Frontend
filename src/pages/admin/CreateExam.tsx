@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Trash2, Plus, Youtube, HelpCircle, Check, Image as ImageIcon } from "lucide-react";
@@ -57,6 +58,13 @@ const CreateExam = () => {
   const [selectedCourseId, setSelectedCourseId] = useState(courseIdFromUrl || "");
   const [selectedCategoryId, setSelectedCategoryId] = useState(categoryFromUrl || "");
   const [categories, setCategories] = useState<{ name: string }[]>([]);
+  const [showUnassignedOnly, setShowUnassignedOnly] = useState(false);
+  const [searchTerm, setSearchTerm] = useState<string>("");
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState<string>("");
+  const [page, setPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
+  const pageSizeOptions = [10, 25, 50, 100];
+  const [totalQuestions, setTotalQuestions] = useState<number>(0);
   const [isLoadingQuestions, setIsLoadingQuestions] = useState(false);
   const [examStatus, setExamStatus] = useState("draft");
   const [isLoading, setIsLoading] = useState(false);
@@ -149,6 +157,14 @@ const CreateExam = () => {
   }, [isEditMode, examId, courses, selectedCourseId, title]);
 
   useEffect(() => {
+    const handle = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm.trim());
+    }, 300);
+
+    return () => clearTimeout(handle);
+  }, [searchTerm]);
+
+  useEffect(() => {
     const selectedCourse = allCourses.find(course => course.id === selectedCourseId);
     if (selectedCourse && selectedCourse.categories) {
       const courseCategories = selectedCourse.categories.map(cat => ({ name: cat }));
@@ -158,19 +174,38 @@ const CreateExam = () => {
     }
     // Reset category selection when course changes
     setSelectedCategoryId("");
+    setPage(1);
+    setTotalQuestions(0);
+    setAvailableQuestions([]);
+    setSearchTerm("");
+    setDebouncedSearchTerm("");
   }, [selectedCourseId, allCourses]);
 
   useEffect(() => {
     const fetchQuestions = async () => {
       if (!selectedCourseId || !selectedCategoryId) {
         setAvailableQuestions([]);
+        setTotalQuestions(0);
+        if (page !== 1) setPage(1);
         return;
       }
 
       setIsLoadingQuestions(true);
       try {
+        const params = new URLSearchParams({
+          category: selectedCategoryId,
+          page: String(page),
+          pageSize: String(pageSize)
+        });
+        if (showUnassignedOnly) {
+          params.append("unassigned", "true");
+        }
+        if (debouncedSearchTerm) {
+          params.append("search", debouncedSearchTerm);
+        }
+
         const response = await axios.get(
-          `${import.meta.env.VITE_BACKEND_URL}/api/questions/courses/${selectedCourseId}/questions?category=${encodeURIComponent(selectedCategoryId)}`,
+          `${import.meta.env.VITE_BACKEND_URL}/api/questions/courses/${selectedCourseId}/questions?${params.toString()}`,
           {
             headers: {
               Authorization: `Bearer ${token}`
@@ -178,8 +213,19 @@ const CreateExam = () => {
           }
         );
 
-        if (response.data && response.data.data) {
-          setAvailableQuestions(response.data.data);
+        const payload = response.data?.data;
+        if (payload) {
+          setAvailableQuestions(Array.isArray(payload.items) ? payload.items : []);
+          setTotalQuestions(
+            typeof payload.total === "number"
+              ? payload.total
+              : Array.isArray(payload.items)
+                ? payload.items.length
+                : 0
+          );
+        } else {
+          setAvailableQuestions([]);
+          setTotalQuestions(0);
         }
       } catch (error) {
         toast({
@@ -193,7 +239,7 @@ const CreateExam = () => {
     };
 
     fetchQuestions();
-  }, [selectedCourseId, selectedCategoryId, token]);
+  }, [selectedCourseId, selectedCategoryId, token, showUnassignedOnly, page, pageSize, debouncedSearchTerm]);
 
   const toggleExamStatus = async () => {
     const newStatus = examStatus === "published" ? "draft" : "published";
@@ -411,6 +457,11 @@ const CreateExam = () => {
               setSelectedCourseId(e.target.value);
               setSelectedCategoryId("");
               setSelectedQuestions([]);
+              setPage(1);
+              setTotalQuestions(0);
+              setAvailableQuestions([]);
+              setSearchTerm("");
+              setDebouncedSearchTerm("");
             }}
             className="w-full p-2 border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-primary text-sm sm:text-base"
             disabled={isEditMode}
@@ -431,7 +482,12 @@ const CreateExam = () => {
           <select
             id="category"
             value={selectedCategoryId}
-            onChange={(e) => setSelectedCategoryId(e.target.value)}
+            onChange={(e) => {
+              setSelectedCategoryId(e.target.value);
+              setPage(1);
+              setSearchTerm("");
+              setDebouncedSearchTerm("");
+            }}
             className="w-full p-2 border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-primary text-sm sm:text-base"
             disabled={!selectedCourseId}
           >
@@ -641,16 +697,86 @@ const CreateExam = () => {
           {/* Show available questions section */}
           <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <h2 className="text-lg sm:text-xl font-semibold">
-              Available Questions ({availableQuestions.length})
+              {/* Available Questions ({availableQuestions.length}) */}
+              Available Questions
             </h2>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleAddAllQuestions}
-              className="bg-white hover:bg-gray-50"
-            >
-              Add All Questions
-            </Button>
+            <div className="flex w-full items-center gap-2 overflow-x-auto whitespace-nowrap sm:ml-auto sm:justify-end">
+              <Input
+                value={searchTerm}
+                onChange={(event) => {
+                  setSearchTerm(event.target.value);
+                  setPage(1);
+                }}
+                placeholder="Search questions"
+                className="w-full sm:w-64 bg-white sm:shrink-0"
+              />
+              <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-600 shrink-0">
+                <span>All</span>
+                <Switch
+                  checked={showUnassignedOnly}
+                  onCheckedChange={(checked) => {
+                    setShowUnassignedOnly(checked);
+                    setPage(1);
+                  }}
+                  aria-label="Toggle unassigned questions"
+                />
+                <span>Unassigned</span>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleAddAllQuestions}
+                className="bg-white hover:bg-gray-50"
+              >
+                Add All Questions
+              </Button>
+              <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-600 shrink-0">
+                <span>Rows per page</span>
+                <select
+                  value={pageSize}
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    setPageSize(value);
+                    setPage(1);
+                  }}
+                  className="p-2 border border-gray-300 rounded-md bg-white text-xs sm:text-sm"
+                >
+                  {pageSizeOptions.map(option => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <span className="text-xs sm:text-sm text-gray-600 shrink-0">
+                {totalQuestions === 0
+                  ? 'No questions'
+                  : `${Math.min((page - 1) * pageSize + 1, totalQuestions)}-${Math.min(page * pageSize, totalQuestions)} of ${totalQuestions}`}
+              </span>
+              <div className="flex items-center gap-1 shrink-0">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(prev => Math.max(prev - 1, 1))}
+                  disabled={page <= 1}
+                  className="bg-white hover:bg-gray-50"
+                >
+                  Previous
+                </Button>
+                <span className="text-xs sm:text-sm text-gray-600">
+                  {totalQuestions === 0 ? 0 : page} / {Math.max(1, Math.ceil(totalQuestions / pageSize))}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(prev => (prev * pageSize >= totalQuestions ? prev : prev + 1))}
+                  disabled={page * pageSize >= totalQuestions}
+                  className="bg-white hover:bg-gray-50"
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
           </div>
 
           <Card className="mb-6">

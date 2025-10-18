@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { BookOpen, ClipboardList, Activity as ActivityIcon, PlusCircle, CheckCircle2 } from 'lucide-react';
 import axios from 'axios';
@@ -6,12 +7,15 @@ import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import defaultCover from '@/assets/default.jpg';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useStudentSession } from '@/contexts/StudentSessionContext';
 
 type TabKey = 'courses' | 'exams' | 'lessons' | 'blogs' | 'activity';
 
 const StudentDashboard: React.FC = () => {
   const { user, token } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
+  const { selectCourse, currentCourse } = useStudentSession();
   const [activeTab, setActiveTab] = useState<TabKey>('courses');
   const [courses, setCourses] = useState<Array<{ id: string; title: string; cover_image?: string }>>([]);
   const [loadingCourses, setLoadingCourses] = useState(false);
@@ -19,6 +23,11 @@ const StudentDashboard: React.FC = () => {
   const [courseToEnroll, setCourseToEnroll] = useState<{ id: string; title: string } | null>(null);
   const [enrolling, setEnrolling] = useState(false);
   const [enrolledIds, setEnrolledIds] = useState<Set<string>>(new Set());
+  // course action popover (Lessons or Exams) – positioned near clicked card
+  const [actionOpen, setActionOpen] = useState(false);
+  const [courseForAction, setCourseForAction] = useState<{ id: string; title: string } | null>(null);
+  const [actionPos, setActionPos] = useState<{ top: number; left: number } | null>(null);
+  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const coursesFetchedRef = useRef(false);
 
   // Student stats (moved from Progress page, now with API attempt and fallback)
@@ -61,21 +70,7 @@ const StudentDashboard: React.FC = () => {
       .join(' ');
   }, [rawName]);
 
-  // Student level (highest across enrolled courses)
-  const [studentLevel, setStudentLevel] = useState<'Beginner' | 'Intermediate' | 'Pro' | 'Master' | null>(null);
-  useEffect(() => {
-    const run = async () => {
-      try {
-        const res = await axios.get(`${import.meta.env.VITE_BACKEND_URL}/api/students/level`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        const lvl = res?.data?.data?.level ?? res?.data?.level ?? null;
-        if (lvl === 'Beginner' || lvl === 'Intermediate' || lvl === 'Pro' || lvl === 'Master') setStudentLevel(lvl);
-        else setStudentLevel(null);
-      } catch {}
-    };
-    if (token) run();
-  }, [token]);
+  // Removed student level logic
 
   // Counts derived from currently displayed course cards
   const enrolledCount = useMemo(() => {
@@ -328,11 +323,7 @@ const StudentDashboard: React.FC = () => {
           </h1>
           <p className="text-gray-600 mt-1">Welcome to your dashboard. Here you will find your courses, exams, and updates.</p>
         </div>
-        {studentLevel && (
-          <span className="inline-flex items-center gap-1 rounded-full border border-purple-300 bg-purple-50 text-purple-700 px-3 py-1 text-xs sm:text-sm">
-            Level: {studentLevel}
-          </span>
-        )}
+        {/* Removed level badge */}
       </div>
 
       {/* Student Counters (moved from Progress and restyled like admin cards) */}
@@ -415,6 +406,56 @@ const StudentDashboard: React.FC = () => {
       </DialogContent>
     </Dialog>
 
+    {/* Course action popover (sleek, small) */}
+    {actionOpen && (
+      <>
+        {/* light overlay to allow click-away close */}
+        <div
+          className="fixed inset-0 bg-black/10 z-40"
+          onClick={() => setActionOpen(false)}
+          aria-hidden="true"
+        />
+        <div
+          className="fixed z-50 w-[200px] rounded-xl border border-gray-200 bg-white shadow-lg"
+          style={{ top: actionPos?.top ?? 100, left: actionPos?.left ?? 100 }}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="p-3">
+            <div className="text-xs font-semibold text-gray-700 mb-2 truncate">{courseForAction?.title}</div>
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!courseForAction) return;
+                  selectCourse({ courseId: courseForAction.id, courseTitle: courseForAction.title });
+                  toast({ title: 'Course Selected', description: `${courseForAction.title} set as current course.` });
+                  setActionOpen(false);
+                  navigate('/student/lessons');
+                }}
+                className="w-full px-3 py-1.5 rounded-md border border-indigo-600 text-indigo-800 bg-indigo-100 hover:bg-indigo-200 hover:border-indigo-700 text-sm"
+              >
+                Lessons
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!courseForAction) return;
+                  selectCourse({ courseId: courseForAction.id, courseTitle: courseForAction.title });
+                  toast({ title: 'Course Selected', description: `${courseForAction.title} set as current course.` });
+                  setActionOpen(false);
+                  navigate('/student/exams');
+                }}
+                className="w-full px-3 py-1.5 rounded-md border border-blue-600 text-blue-800 bg-blue-100 hover:bg-blue-200 hover:border-blue-700 text-sm"
+              >
+                Exams
+              </button>
+            </div>
+          </div>
+        </div>
+      </>
+    )}
+
       {/* Tab buttons removed as requested */}
 
       {/* Tab content panels */}
@@ -422,6 +463,7 @@ const StudentDashboard: React.FC = () => {
         {activeTab === 'courses' && (
           <div>
             <h3 className="font-semibold text-gray-800 mb-2">Available Courses</h3>
+            <p className="text-sm text-gray-600 mb-3">Click any course card to open quick actions (Lessons or Exams). You can switch your selected course at any time.</p>
             {loadingCourses ? (
               <div className="flex items-center justify-center min-h-[160px]">
                 <div className="text-center">
@@ -436,33 +478,64 @@ const StudentDashboard: React.FC = () => {
                 {courses.map((c) => (
                   <div
                     key={c.id}
-                    className="mx-auto w-full max-w-[420px] flex flex-col gap-2 rounded-xl border border-gray-200 hover:border-blue-400 transition hover:bg-blue-50 px-4 py-2"
+                    role="button"
+                    tabIndex={0}
+                    ref={(el) => { cardRefs.current[c.id] = el; }}
+                    onClick={() => {
+                      setCourseForAction({ id: c.id, title: c.title });
+                      const rect = cardRefs.current[c.id]?.getBoundingClientRect();
+                      if (rect) {
+                        // Position popover near the top-right of the card with a slight offset
+                        setActionPos({ top: rect.top + window.scrollY + 8, left: rect.right + window.scrollX - 220 });
+                      } else {
+                        setActionPos(null);
+                      }
+                      setActionOpen(true);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setCourseForAction({ id: c.id, title: c.title });
+                        const rect = cardRefs.current[c.id]?.getBoundingClientRect();
+                        if (rect) {
+                          setActionPos({ top: rect.top + window.scrollY + 8, left: rect.right + window.scrollX - 220 });
+                        } else {
+                          setActionPos(null);
+                        }
+                        setActionOpen(true);
+                      }
+                    }}
+                    className={`mx-auto w-full max-w-[420px] flex flex-col gap-2 rounded-xl border px-4 py-2 cursor-pointer transition
+                      ${(actionOpen ? (courseForAction?.id === c.id) : (currentCourse?.courseId === c.id))
+                        ? 'border-amber-600 bg-amber-50 ring-2 ring-amber-300 hover:bg-amber-100 hover:border-amber-700 shadow-md'
+                        : 'border-gray-200 hover:border-amber-300 hover:bg-amber-50'}`}
                   >
                     {/* Left column: title + action, Right column: image */}
                     <div className="grid grid-cols-[1fr_auto] items-start gap-3">
                       <div className="min-w-0 flex flex-col">
                         <div className="truncate pr-1 text-sm sm:text-base font-medium text-gray-800">{c.title}</div>
-                        <div className="mt-1">
-                          {enrolledIds.has(c.id) ? (
-                            <button
-                              type="button"
-                              disabled
-                              className="flex items-center gap-1 text-xs sm:text-sm px-3 py-1 rounded-full border border-green-500 text-green-700 bg-green-50"
-                              title={`Enrolled in ${c.title}`}
-                            >
-                              <CheckCircle2 size={16} /> Enrolled
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => onClickEnroll(c)}
-                              className="flex items-center gap-1 text-xs sm:text-sm px-3 py-1 rounded-full border border-blue-400 text-blue-700 bg-blue-50 hover:bg-blue-100 hover:border-blue-500 transition"
-                              title={`Enroll in ${c.title}`}
-                            >
-                              <PlusCircle size={16} /> Enroll
-                            </button>
-                          )}
+                        <div className="text-xs text-gray-600 mt-0.5 truncate mb-2" title={`Explore ${c.title} lessons and exams`}>
+                          Explore {c.title} lessons and exams
                         </div>
+                        {enrolledIds.has(c.id) ? (
+                          <button
+                            type="button"
+                            disabled
+                            className="inline-flex w-fit shrink-0 items-center gap-1 text-[11px] sm:text-xs px-2 py-1 rounded-full border border-green-500 text-green-700 bg-green-50"
+                            title={`Enrolled in ${c.title}`}
+                          >
+                            <CheckCircle2 size={12} /> Enrolled
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); onClickEnroll(c); }}
+                            className="inline-flex w-fit shrink-0 items-center gap-1 text-[11px] sm:text-xs px-2 py-1 rounded-full border border-blue-500 text-blue-700 bg-blue-50 hover:bg-blue-100 hover:border-blue-600 transition"
+                            title={`Enroll in ${c.title}`}
+                          >
+                            <PlusCircle size={12} /> Enroll
+                          </button>
+                        )}
                       </div>
                       <div className="shrink-0 justify-self-end self-start">
                         <img

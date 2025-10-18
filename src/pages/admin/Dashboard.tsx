@@ -82,6 +82,7 @@ const TeacherDashboard = () => {
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [exams, setExams] = useState<Exam[]>([]);
   const [blogs, setBlogs] = useState<Blog[]>([]);
+  const [feedbackRows, setFeedbackRows] = useState<any[]>([]);
   const [teachers, setTeachers] = useState([]);
   const [recentUsers, setRecentUsers] = useState<any[]>([]);
   const [performanceData, setPerformanceData] = useState([]);
@@ -179,6 +180,16 @@ const TeacherDashboard = () => {
         }
       );
       setStats(statsResponse.data);
+
+      // Fetch questions feedback (admin/teacher only)
+      try {
+        const fbRes = await axios.get(
+          `${import.meta.env.VITE_BACKEND_URL}/api/questions/feedback`,
+          { params: { page: 1, pageSize: 20 }, headers: { Authorization: `Bearer ${token}` } }
+        );
+        const fbList = Array.isArray(fbRes.data?.data) ? fbRes.data.data : [];
+        setFeedbackRows(fbList);
+      } catch {}
 
     } catch (error) {
       toast({
@@ -327,6 +338,51 @@ const TeacherDashboard = () => {
           icon={<GraduationCap className="h-4 w-4 text-white" />}
           color="bg-gradient-to-r from-indigo-500 to-indigo-600"
           isLoading={loading}
+        />
+
+        <DataTable 
+          title={"Questions Feedback"}
+          data={feedbackRows}
+          viewAllLink="/admin/questions-feedback"
+          isLoading={loading}
+          columns={[
+            { 
+              key: 'created_at', 
+              title: 'Date',
+              render: (row) => new Date(row.created_at).toLocaleString()
+            },
+            { 
+              key: 'question', 
+              title: 'Question',
+              render: (row) => (
+                <div className="max-w-[280px] truncate" title={row?.question?.text || ''}>{row?.question?.text || '—'}</div>
+              )
+            },
+            { 
+              key: 'student', 
+              title: 'Student',
+              render: (row) => row?.student?.name || '—'
+            },
+            { 
+              key: 'email', 
+              title: 'Email',
+              render: (row) => row?.student?.email || '—'
+            },
+            { 
+              key: 'message', 
+              title: 'Message',
+              render: (row) => (
+                <div className="max-w-[320px] truncate" title={row.message}>{row.message}</div>
+              )
+            },
+            { 
+              key: 'status', 
+              title: 'Status',
+              render: (row) => (
+                <span className="capitalize">{row.status}</span>
+              )
+            },
+          ]}
         />
       </div>
 

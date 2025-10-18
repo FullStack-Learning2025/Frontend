@@ -17,6 +17,7 @@ import {
   UserPlus
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
+
 import { cn } from "@/lib/utils";
 import { useState, HTMLAttributes } from "react";
 import purplelogo from '../assets/ExamWalk Purple Logo.svg'
@@ -234,6 +235,11 @@ const AdminLayout = () => {
       icon: <Award className="h-5 w-5" />,
       path: "/admin/promos",
     },
+    {
+      title: 'Questions Feedbacks',
+      icon: <FileText className="h-5 w-5" />,
+      path: "/admin/questions-feedback",
+    },
 
     { type: "divider" },
     {
@@ -423,6 +429,7 @@ const AdminLayout = () => {
             </button>
 
             <div className="flex items-center space-x-2">
+
               <span className="text-sm text-gray-700" role="presentation">
                 {userProfile?.display_name || 'User'}
               </span>
