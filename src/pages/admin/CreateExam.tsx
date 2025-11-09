@@ -613,7 +613,7 @@ const CreateExam = () => {
             ) : (
               getSelectedQuestions().map((question, qIndex) => (
                 <Card key={question.id} className="border border-gray-200 overflow-hidden">
-                  <div className="bg-gray-50 p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0 border-b border-gray-200">
+                  <div className="bg-gray-50 p-3 sm:p-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-4 border-b border-gray-200">
                     <h3 className="font-medium text-sm sm:text-base">Question {qIndex + 1}</h3>
                     <div className="flex items-center gap-1 sm:gap-2">
                       {question.hint && (
@@ -645,8 +645,18 @@ const CreateExam = () => {
                     </div>
                   </div>
                   <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
-                    <div>
-                      <p className="text-sm sm:text-base">{question.question}</p>
+                    <div className="space-y-3">
+                      <p className="text-sm sm:text-base whitespace-pre-line">{question.question}</p>
+                      {question.image && (
+                        <div className="border border-gray-200 rounded-md p-2 bg-gray-50">
+                          <img
+                            src={question.image}
+                            alt="Question illustration"
+                            className="max-h-64 w-full object-contain"
+                            loading="lazy"
+                          />
+                        </div>
+                      )}
                     </div>
 
                     <div className="space-y-2 sm:space-y-3">
@@ -793,11 +803,23 @@ const CreateExam = () => {
                   {availableQuestions.map((question) => (
                     <div 
                       key={question.id} 
-                      className="flex items-center justify-between border rounded-lg p-3 hover:bg-gray-50"
+                      className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 border rounded-lg p-3 hover:bg-gray-50"
                     >
-                      <div className="flex-1">
-                        <p className="font-medium text-sm">{question.question}</p>
-                        <p className="text-xs text-gray-500 mt-1">
+                      <div className="flex-1 space-y-3">
+                        <div>
+                          <p className="font-medium text-sm whitespace-pre-line">{question.question}</p>
+                          {question.image && (
+                            <div className="mt-2 border border-gray-200 rounded-md p-2 bg-gray-50">
+                              <img
+                                src={question.image}
+                                alt="Question illustration"
+                                className="max-h-48 w-full object-contain"
+                                loading="lazy"
+                              />
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-500">
                           Correct Answer: {getCorrectAnswerText(question)} | 
                           {question.hint && ' Has Hint |'} 
                           {question.video && ' Has Video'}

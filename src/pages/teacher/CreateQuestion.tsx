@@ -132,7 +132,10 @@ const CreateQuestion = () => {
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const [questionsPerPage] = useState(100);
+  const [questionsPerPage, setQuestionsPerPage] = useState(10);
+  const [totalQuestions, setTotalQuestions] = useState(0);
+
+  const totalPages = Math.max(1, Math.ceil(totalQuestions / questionsPerPage));
 
   const { toast } = useToast();
 
@@ -224,10 +227,16 @@ const CreateQuestion = () => {
 
       setIsLoadingQuestions(true);
       try {
-        const noAnswersParam = filterIncomplete ? "&noAnswers=true" : "";
-        const noRulesParam = filterMissingRules ? "&noRules=true" : "";
+        const params = new URLSearchParams({
+          category: selectedCategoryId,
+          only: "current",
+          page: String(currentPage),
+          pageSize: String(questionsPerPage)
+        });
+        if (filterIncomplete) params.append("noAnswers", "true");
+        if (filterMissingRules) params.append("noRules", "true");
         const response = await axios.get(
-          `${import.meta.env.VITE_BACKEND_URL}/api/questions/courses/${selectedCourseId}/questions?category=${selectedCategoryId}&only=current${noAnswersParam}${noRulesParam}`,
+          `${import.meta.env.VITE_BACKEND_URL}/api/questions/courses/${selectedCourseId}/questions?${params.toString()}`,
           {
             headers: {
               Authorization: `Bearer ${token}`
@@ -241,6 +250,11 @@ const CreateQuestion = () => {
           : Array.isArray(payload?.items)
             ? payload.items
             : [];
+        const totalFromPayload = typeof payload?.total === "number"
+          ? payload.total
+          : Array.isArray(payload?.items)
+            ? payload.items.length
+            : questionArray.length;
 
         if (questionArray.length > 0) {
           const formattedQuestions = questionArray.map((q: any, index: number) => {
@@ -277,7 +291,7 @@ const CreateQuestion = () => {
 
           setQuestions(formattedQuestions);
           originalQuestionsRef.current = formattedQuestions.map(q => ({ ...q, choices: q.choices.map(c => ({ ...c })) }));
-          setCurrentPage(1);
+          setTotalQuestions(totalFromPayload);
         } else {
           setQuestions([
             {
@@ -293,6 +307,7 @@ const CreateQuestion = () => {
             }
           ]);
           originalQuestionsRef.current = [];
+          setTotalQuestions(0);
         }
       } catch (error) {
         console.log(error);
@@ -307,7 +322,7 @@ const CreateQuestion = () => {
     };
 
     fetchQuestions();
-  }, [selectedCourseId, selectedCategoryId, token, filterIncomplete, filterMissingRules]);
+  }, [selectedCourseId, selectedCategoryId, token, filterIncomplete, filterMissingRules, currentPage, questionsPerPage]);
 
   // Fetch single question in edit mode
   useEffect(() => {
@@ -703,6 +718,7 @@ const CreateQuestion = () => {
       setQuestions([blank]);
       originalQuestionsRef.current = [{ ...blank, choices: blank.choices.map(c => ({ ...c })) }];
       setCurrentPage(1);
+      setTotalQuestions(typeof questionData?.total === "number" ? questionData.total : 1);
     } catch (error) {
       console.log(error);
       toast({
@@ -714,17 +730,17 @@ const CreateQuestion = () => {
   };
 
   // Pagination calculations
-  const totalPages = Math.ceil(questions.length / questionsPerPage);
+  const totalPagesCalc = Math.max(1, Math.ceil(totalQuestions / questionsPerPage));
   const startIndex = (currentPage - 1) * questionsPerPage;
-  const endIndex = startIndex + questionsPerPage;
-  const currentQuestions = questions.slice(startIndex, endIndex);
+  const endIndex = Math.min(startIndex + questionsPerPage, totalQuestions);
+  const currentQuestions = questions;
 
   const goToPage = (page: number) => {
     setCurrentPage(page);
   };
 
   const goToNextPage = () => {
-    if (currentPage < totalPages) {
+    if (currentPage < totalPagesCalc) {
       setCurrentPage(currentPage + 1);
     }
   };
@@ -948,7 +964,7 @@ const CreateQuestion = () => {
               <h2 className="text-lg sm:text-xl font-semibold">Questions</h2>
               {questions.length > 0 && (
                 <span className="text-sm text-gray-500">
-                  Showing {startIndex + 1}-{Math.min(endIndex, questions.length)} of {questions.length} questions
+                  Showing {totalQuestions === 0 ? 0 : startIndex + 1}-{Math.min(endIndex, totalQuestions)} of {totalQuestions} questions
                 </span>
               )}
             </div>
@@ -1172,10 +1188,10 @@ const CreateQuestion = () => {
           </div>
 
           {/* Pagination Controls */}
-          {questions.length > questionsPerPage && (
+          {totalQuestions > questionsPerPage && (
             <div className="mt-6 flex items-center justify-between">
               <div className="text-sm text-gray-500">
-                Page {currentPage} of {totalPages}
+                Page {currentPage} of {totalPagesCalc}
               </div>
               <div className="flex items-center gap-2">
                 <Button
@@ -1190,14 +1206,14 @@ const CreateQuestion = () => {
                 </Button>
                 
                 <div className="flex items-center gap-1">
-                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  {Array.from({ length: Math.min(5, totalPagesCalc) }, (_, i) => {
                     let pageNum;
-                    if (totalPages <= 5) {
+                    if (totalPagesCalc <= 5) {
                       pageNum = i + 1;
                     } else if (currentPage <= 3) {
                       pageNum = i + 1;
-                    } else if (currentPage >= totalPages - 2) {
-                      pageNum = totalPages - 4 + i;
+                    } else if (currentPage >= totalPagesCalc - 2) {
+                      pageNum = totalPagesCalc - 4 + i;
                     } else {
                       pageNum = currentPage - 2 + i;
                     }
@@ -1220,7 +1236,7 @@ const CreateQuestion = () => {
                   variant="outline"
                   size="sm"
                   onClick={goToNextPage}
-                  disabled={currentPage === totalPages}
+                  disabled={currentPage === totalPagesCalc}
                   className="flex items-center gap-1"
                 >
                   Next

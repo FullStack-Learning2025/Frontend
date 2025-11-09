@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import registrationImg from '../assets/registeration.png';
+import purpleLogo from '@/assets/ExamWalk Purple Logo.svg';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { Dialog, DialogContent, DialogTitle, DialogActions } from '@mui/material';
@@ -560,7 +561,7 @@ const Login = () => {
     <div className="min-h-screen bg-[#7C3AED] px-2 relative overflow-hidden pb-10 w-screen">
     <div className="flex flex-col items-center mb-2 animate-fadein pt-5 pb-10">
         <a href="/">
-            <img src="https://examwalk.site/assets/logo-CbMpVJM2.png" alt="ExamWalk Logo" className="h-16 drop-shadow-lg mb-2" style={{ filter: 'drop-shadow(0 4px 16px rgba(124,60,237,0.5))' }} />
+            <img src={purpleLogo} alt="ExamWalk Logo" className="h-16 drop-shadow-lg mb-2" style={{ filter: 'drop-shadow(0 4px 16px rgba(124,60,237,0.5))' }} />
         </a>
     </div>
 

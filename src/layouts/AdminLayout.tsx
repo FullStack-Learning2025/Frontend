@@ -14,7 +14,8 @@ import {
   Upload,
   X,
   Shield,
-  UserPlus
+  UserPlus,
+  AlertCircle
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 
@@ -191,6 +192,12 @@ const AdminLayout = () => {
       path: "/admin/dashboard",
     },
     {
+      title: "Error Logs",
+      icon: <AlertCircle className="h-5 w-5" />,
+      path: "/admin/error-logs",
+      badge: true, // This will show a badge if there are unresolved errors
+    },
+    {
       title: t.users,
       icon: <Users className="h-5 w-5" />,
       path: "/admin/users",
@@ -347,51 +354,30 @@ const AdminLayout = () => {
           <ul className="space-y-1">
             {menuItems.map((item, index) =>
               item.type === "divider" ? (
-                <li key={`divider-${index}`} className="mx-4 my-2 border-t border-gray-200" />
+                <li key={index} className="border-t border-gray-200 my-2"></li>
               ) : (
-                <li key={item.title || index}>
-                  {item.isLanguageSelector ? (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          className={cn(
-                            "flex items-center w-full px-4 py-2.5 text-gray-700 hover:bg-purple-50 hover:text-purple-700",
-                            "transition-all duration-200 ease-in-out",
-                          )}
-                        >
-                          <span className={cn("", !sidebarOpen && "lg:mx-auto")}>{item.icon}</span>
-                          {(sidebarOpen || isMobile) && <span className="ml-3">{item.title}</span>}
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={() => setLanguage('en')}
-                          className={language === 'en' ? 'bg-muted' : ''}
-                        >
-                          {t.english}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => setLanguage('ar')}
-                          className={language === 'ar' ? 'bg-muted' : ''}
-                        >
-                          {t.arabic}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  ) : item.action ? (
+                <li key={index}>
+                  {item.action ? (
                     <button
                       onClick={item.action}
                       className={cn(
                         "flex items-center w-full px-4 py-2.5 text-gray-700 hover:bg-purple-50 hover:text-purple-700",
-                        "transition-all duration-200 ease-in-out",
+                        "transition-all duration-200 ease-in-out"
                       )}
                     >
-                      <span className={cn("", !sidebarOpen && "lg:mx-auto")}>{item.icon}</span>
-                      {(sidebarOpen || isMobile) && <span className="ml-3">{item.title}</span>}
+                      <span className={cn("relative", !sidebarOpen && "lg:mx-auto")}>
+                        {item.icon}
+                      </span>
+                      {(sidebarOpen || isMobile) && (
+                        <span className="ml-3 flex-1 flex items-center justify-between">
+                          {item.title}
+                        </span>
+                      )}
                     </button>
                   ) : (
                     <Link
                       to={item.path}
+                      key={index}
                       onClick={() => isMobile && setSidebarOpen(false)}
                       className={cn(
                         "flex items-center px-4 py-2.5 text-gray-700 hover:bg-purple-50 hover:text-purple-700",
@@ -399,8 +385,22 @@ const AdminLayout = () => {
                         window.location.pathname === item.path && "bg-purple-50 text-purple-700 font-medium"
                       )}
                     >
-                      <span className={cn("", !sidebarOpen && "lg:mx-auto")}>{item.icon}</span>
-                      {(sidebarOpen || isMobile) && <span className="ml-3">{item.title}</span>}
+                      <span className={cn("relative", !sidebarOpen && "lg:mx-auto")}>
+                        {item.icon}
+                        {item.badge && (
+                          <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-red-500"></span>
+                        )}
+                      </span>
+                      {(sidebarOpen || isMobile) && (
+                        <span className="ml-3 flex-1 flex items-center justify-between">
+                          {item.title}
+                          {item.badge && (
+                            <span className="ml-2 inline-flex items-center justify-center h-5 w-5 rounded-full bg-red-100 text-red-800 text-xs font-medium">
+                              {/* Error count will be shown here */}
+                            </span>
+                          )}
+                        </span>
+                      )}
                     </Link>
                   )}
                 </li>

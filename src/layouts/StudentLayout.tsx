@@ -12,7 +12,8 @@ import {
   X,
   Upload,
   Newspaper,
-  Trophy
+  Trophy,
+  Sparkles
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 
@@ -184,6 +185,7 @@ const StudentLayoutInner = () => {
     ] : []),
     { title: t.blogs, icon: <Newspaper className="h-5 w-5" />, path: "/student/blogs" },
     { title: 'Winning Question', icon: <Trophy className="h-5 w-5" />, path: "/student/winningquestion" },
+    { title: 'Random Generated Exams', icon: <Sparkles className="h-5 w-5" />, path: "/student/random-exams" },
     { title: 'Progress', icon: <TrendingUp className="h-5 w-5" />, path: "/student/progress" },
     { type: "divider" },
     { title: t.language, icon: <Globe className="h-5 w-5" />, isLanguageSelector: true },

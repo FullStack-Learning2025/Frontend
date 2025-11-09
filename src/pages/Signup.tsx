@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import PhoneInput from 'react-phone-input-2';
 import 'react-phone-input-2/lib/style.css';
 import registrationImg from '../assets/registeration.png';
+import purpleLogo from '@/assets/ExamWalk Purple Logo.svg';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -422,7 +423,7 @@ const Signup = () => {
         <div className="min-h-screen bg-[#7C3AED] px-2 relative overflow-hidden pb-10 w-screen">
             <div className="flex flex-col items-center mb-2 animate-fadein pt-5 pb-10">
                 <a href="/">
-                    <img src="https://examwalk.site/assets/logo-CbMpVJM2.png" alt="ExamWalk Logo" className="h-16 drop-shadow-lg mb-2" style={{ filter: 'drop-shadow(0 4px 16px rgba(124,60,237,0.5))' }} />
+                    <img src={purpleLogo} alt="ExamWalk Logo" className="h-16 drop-shadow-lg mb-2" style={{ filter: 'drop-shadow(0 4px 16px rgba(124,60,237,0.5))' }} />
                 </a>
             </div>
 

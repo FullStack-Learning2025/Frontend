@@ -32,6 +32,7 @@ const StudentExams: React.FC = () => {
   const { token } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  if (!token) return null;
   // Embedded Exams tab state
   const [selectedCourse, setSelectedCourse] = useState<EnrolledCourse | null>(null);
   const [exams, setExams] = useState<ExamItem[]>([]);
@@ -561,13 +562,11 @@ const StudentExams: React.FC = () => {
         )}
       </div>
 
-      {currentCourse && selectedCourse && (
-        <div className="flex items-start gap-3">
-          <div className="inline-flex items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-3 py-1 text-purple-800">
-            <span className="text-sm sm:text-base font-semibold">Exams – {selectedCourse.courseTitle}</span>
-          </div>
+      {currentCourse && selectedCourse ? (
+        <div className="inline-flex items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-3 py-1 text-purple-800">
+          <span className="text-sm sm:text-base font-semibold">Exams – {selectedCourse.courseTitle}</span>
         </div>
-      )}
+      ) : null}
 
     {/* Complexity filter + pagination */}
     <div className="mt-4 flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between">

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { 
   Card, 
@@ -11,9 +11,16 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowLeft, Mail, Phone, Calendar, MapPin, Video } from "lucide-react";
+import { ArrowLeft, Mail, Phone, Calendar, MapPin, Video, Loader2 } from "lucide-react";
 import UserPerformanceChart from "@/components/admin/UserPerformanceChart";
 import axios from "axios";
 import { useAuth } from "@/contexts/AuthContext";
@@ -50,6 +57,14 @@ interface Student {
   }[];
 }
 
+interface CourseOption {
+  id: string;
+  title: string;
+  lesson_count?: number;
+  categories?: string[];
+  status?: string;
+}
+
 const UserDetails = () => {
   const { userId } = useParams<{ userId: string }>();
   const navigate = useNavigate();
@@ -72,6 +87,14 @@ const UserDetails = () => {
   const [examStats, setExamStats] = useState<Record<string, { avgPct: number; bestPct: number }>>({});
   // Enrolled courses (admin fetch by userId)
   const [enrolledCourses, setEnrolledCourses] = useState<Array<{ id: string; title: string; description?: string; lesson_count?: number; categories?: string[]; category?: any; joined_date?: string | null }>>([]);
+  const [allCourseOptions, setAllCourseOptions] = useState<CourseOption[]>([]);
+  const [courseOptionsLoading, setCourseOptionsLoading] = useState(false);
+  const [enrollDialogOpen, setEnrollDialogOpen] = useState(false);
+  const [selectedCourseId, setSelectedCourseId] = useState<string>("");
+  const [enrollingCourse, setEnrollingCourse] = useState(false);
+  const [unenrollDialogOpen, setUnenrollDialogOpen] = useState(false);
+  const [courseToUnenroll, setCourseToUnenroll] = useState<{ id: string; title: string } | null>(null);
+  const [unenrollingCourse, setUnenrollingCourse] = useState(false);
 
   console.log('UserDetails component rendered with userId:', userId);
 
@@ -112,6 +135,122 @@ const UserDetails = () => {
       console.log('Not fetching student - userId:', userId, 'token exists:', !!token);
     }
   }, [userId, token]);
+
+  const confirmUnenrollCourse = async () => {
+    if (!userId || !courseToUnenroll) return;
+    setUnenrollingCourse(true);
+    try {
+      const res = await axios.delete(
+        `${import.meta.env.VITE_BACKEND_URL}/api/admin/student/${userId}/courses/${courseToUnenroll.id}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const serverMessage = res?.data?.data?.message || res?.data?.message || `${courseToUnenroll.title} removed from student`;
+      toast({ title: "Success", description: serverMessage });
+      setUnenrollDialogOpen(false);
+      setCourseToUnenroll(null);
+      try {
+        const url = `${import.meta.env.VITE_BACKEND_URL}/api/admin/student/${userId}/courses`;
+        const courseRes = await axios.get(url, { headers: { Authorization: `Bearer ${token}` } });
+        const raw = Array.isArray(courseRes.data?.data) ? courseRes.data.data : (Array.isArray(courseRes.data) ? courseRes.data : []);
+        setEnrolledCourses(raw.map(normalizeCourse));
+      } catch (error: any) {
+        toast({ title: "Error", description: error?.response?.data?.error || "Failed to refresh enrolled courses.", variant: "destructive" });
+      }
+    } catch (error: any) {
+      const msg = error?.response?.data?.error || error?.response?.data?.message || error?.message || "Failed to unenroll student.";
+      toast({ title: "Error", description: msg, variant: "destructive" });
+    } finally {
+      setUnenrollingCourse(false);
+    }
+  };
+
+  const loadCourseOptions = useCallback(async () => {
+    if (!token) return;
+    setCourseOptionsLoading(true);
+    try {
+      const res = await axios.get(`${import.meta.env.VITE_BACKEND_URL}/api/courses/titles`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const list = Array.isArray(res.data?.data) ? res.data.data : [];
+      setAllCourseOptions(list);
+    } catch (error: any) {
+      toast({ title: "Error", description: error?.response?.data?.error || "Failed to load courses.", variant: "destructive" });
+    } finally {
+      setCourseOptionsLoading(false);
+    }
+  }, [token, toast]);
+
+  useEffect(() => {
+    loadCourseOptions();
+  }, [loadCourseOptions]);
+
+  const handleOpenEnrollDialog = () => {
+    setSelectedCourseId("");
+    setEnrollDialogOpen(true);
+  };
+
+  const handleOpenUnenrollDialog = (course: { id: string; title: string }) => {
+    setCourseToUnenroll(course);
+    setUnenrollDialogOpen(true);
+  };
+
+  const handleConfirmUnenroll = async () => {
+    if (!courseToUnenroll) return;
+    confirmUnenrollCourse();
+  };
+
+  const normalizeCourse = (raw: any) => {
+    let categories: string[] | undefined = Array.isArray(raw?.categories) ? raw.categories.map(String) : undefined;
+    let categoryValue: any = raw?.category;
+    if (typeof categoryValue === "string") {
+      const trimmed = categoryValue.trim();
+      if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+        try { categoryValue = JSON.parse(trimmed); } catch { /* ignore parse errors */ }
+      }
+    }
+    if (!categories) {
+      if (Array.isArray(categoryValue)) categories = categoryValue.map(String);
+      else if (typeof categoryValue === "string" && categoryValue) categories = [categoryValue];
+      else categories = [];
+    }
+    return {
+      id: raw?.courseId || raw?.id,
+      title: raw?.courseTitle || raw?.title || "Untitled Course",
+      lesson_count: raw?.lesson_count,
+      categories,
+      category: categoryValue,
+      joined_date: raw?.joined_date || undefined,
+    };
+  };
+
+  const handleEnrollCourse = async () => {
+    if (!userId || !selectedCourseId) return;
+    setEnrollingCourse(true);
+    try {
+      const res = await axios.post(
+        `${import.meta.env.VITE_BACKEND_URL}/api/admin/student/${userId}/courses`,
+        { courseId: selectedCourseId },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const serverMessage = res?.data?.data?.message || res?.data?.message || "Student enrolled successfully";
+      toast({ title: "Success", description: serverMessage });
+      setEnrollDialogOpen(false);
+      await loadCourseOptions();
+      try {
+        const url = `${import.meta.env.VITE_BACKEND_URL}/api/admin/student/${userId}/courses`;
+        const courseRes = await axios.get(url, { headers: { Authorization: `Bearer ${token}` } });
+        const raw = Array.isArray(courseRes.data?.data) ? courseRes.data.data : (Array.isArray(courseRes.data) ? courseRes.data : []);
+        setEnrolledCourses(raw.map(normalizeCourse));
+      } catch (error: any) {
+        toast({ title: "Error", description: error?.response?.data?.error || "Failed to refresh enrolled courses.", variant: "destructive" });
+      }
+    } catch (error: any) {
+      const msg = error?.response?.data?.error || error?.response?.data?.message || error?.message || "Failed to enroll student.";
+      toast({ title: "Error", description: msg, variant: "destructive" });
+    } finally {
+      setEnrollingCourse(false);
+    }
+  };
 
   // Fetch enrolled courses for this user (admin view)
   useEffect(() => {
@@ -376,13 +515,21 @@ const UserDetails = () => {
                   <CardDescription>All courses this user has enrolled in</CardDescription>
                 </CardHeader>
                 <CardContent>
+                  <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="text-sm text-muted-foreground">
+                      Showing {enrolledCourses.length} {enrolledCourses.length === 1 ? 'course' : 'courses'}
+                    </div>
+                    <Button onClick={handleOpenEnrollDialog} className="w-full sm:w-auto">
+                      Enroll in Course
+                    </Button>
+                  </div>
                   <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead>Course Title</TableHead>
                         <TableHead>Lessons</TableHead>
                         <TableHead>Category</TableHead>
-                        <TableHead></TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -423,7 +570,15 @@ const UserDetails = () => {
                                 return '-';
                               })()}
                             </TableCell>
-                            <TableCell></TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleOpenUnenrollDialog({ id: course.id, title: course.title })}
+                              >
+                                Unenroll
+                              </Button>
+                            </TableCell>
                           </TableRow>
                         ))
                       )}
@@ -606,6 +761,88 @@ const UserDetails = () => {
           )}
           <DialogFooter className="flex gap-2 sm:justify-end">
             <Button variant="outline" onClick={() => setShowAttemptDetail(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={enrollDialogOpen} onOpenChange={setEnrollDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Enroll student in a course</DialogTitle>
+            <DialogDescription>Select a course to add to this student.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-700">Course</label>
+              <Select
+                value={selectedCourseId}
+                onValueChange={setSelectedCourseId}
+                disabled={courseOptionsLoading}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder={courseOptionsLoading ? 'Loading courses...' : 'Select a course'} />
+                </SelectTrigger>
+                <SelectContent className="max-h-64">
+                  {courseOptionsLoading ? (
+                    <div className="flex items-center justify-center py-6 text-sm text-muted-foreground">
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Loading courses...
+                    </div>
+                  ) : (
+                    allCourseOptions.map((course) => (
+                      <SelectItem key={course.id} value={course.id}>
+                        {course.title}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEnrollDialogOpen(false)} disabled={enrollingCourse}>
+              Cancel
+            </Button>
+            <Button onClick={handleEnrollCourse} disabled={!selectedCourseId || enrollingCourse}>
+              {enrollingCourse ? (
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Enrolling...
+                </span>
+              ) : (
+                'Enroll'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={unenrollDialogOpen} onOpenChange={setUnenrollDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Unenroll student?</DialogTitle>
+            <DialogDescription>
+              {courseToUnenroll ? `This will remove ${courseToUnenroll.title} from the student's courses.` : 'Select a course to unenroll.'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUnenrollDialogOpen(false)} disabled={unenrollingCourse}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmUnenroll}
+              disabled={!courseToUnenroll || unenrollingCourse}
+            >
+              {unenrollingCourse ? (
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Removing...
+                </span>
+              ) : (
+                'Unenroll'
+              )}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

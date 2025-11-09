@@ -96,7 +96,8 @@ const AdminCreateQuestion = () => {
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const [questionsPerPage] = useState(100);
+  const [questionsPerPage, setQuestionsPerPage] = useState(10);
+  const [totalQuestions, setTotalQuestions] = useState(0);
 
   const { toast } = useToast();
 
@@ -217,10 +218,17 @@ const AdminCreateQuestion = () => {
 
       setIsLoadingQuestions(true);
       try {
-        const noAnswersParam = filterIncomplete ? "&noAnswers=true" : "";
-        const noRulesParam = filterMissingRules ? "&noRules=true" : "";
+        const params = new URLSearchParams({
+          category: selectedCategoryId,
+          only: "current",
+          page: String(currentPage),
+          pageSize: String(questionsPerPage)
+        });
+        if (filterIncomplete) params.append("noAnswers", "true");
+        if (filterMissingRules) params.append("noRules", "true");
+
         const response = await axios.get(
-          `${import.meta.env.VITE_BACKEND_URL}/api/questions/courses/${selectedCourseId}/questions?category=${selectedCategoryId}&only=current${noAnswersParam}${noRulesParam}`,
+          `${import.meta.env.VITE_BACKEND_URL}/api/questions/courses/${selectedCourseId}/questions?${params.toString()}`,
           {
             headers: {
               Authorization: `Bearer ${token}`
@@ -234,6 +242,11 @@ const AdminCreateQuestion = () => {
           : Array.isArray(payload?.items)
             ? payload.items
             : [];
+        const totalFromPayload = typeof payload?.total === "number"
+          ? payload.total
+          : Array.isArray(payload?.items)
+            ? payload.items.length
+            : questionArray.length;
 
         if (questionArray.length > 0) {
           const formattedQuestions = questionArray.map((q: any, index: number) => {
@@ -273,7 +286,7 @@ const AdminCreateQuestion = () => {
           setQuestions(formattedQuestions);
           // snapshot originals for change detection
           originalQuestionsRef.current = formattedQuestions.map(q => ({ ...q, choices: q.choices.map(c => ({ ...c })) }));
-          setCurrentPage(1); // Reset to first page when new questions are loaded
+          setTotalQuestions(totalFromPayload);
         } else {
           setQuestions([
             {
@@ -289,6 +302,7 @@ const AdminCreateQuestion = () => {
             }
           ]);
           originalQuestionsRef.current = [];
+          setTotalQuestions(0);
         }
       } catch (error) {
         console.log(error);
@@ -303,7 +317,7 @@ const AdminCreateQuestion = () => {
     };
 
     fetchQuestions();
-  }, [selectedCourseId, selectedCategoryId, token, filterIncomplete, filterMissingRules]);
+  }, [selectedCourseId, selectedCategoryId, token, filterIncomplete, filterMissingRules, currentPage, questionsPerPage]);
 
   // Fetch single question in edit mode
   useEffect(() => {
@@ -699,6 +713,7 @@ const AdminCreateQuestion = () => {
       setQuestions([blank]);
       originalQuestionsRef.current = [{ ...blank, choices: blank.choices.map(c => ({ ...c })) }];
       setCurrentPage(1);
+      setTotalQuestions(1);
     } catch (error) {
       console.log(error);
       toast({
@@ -710,10 +725,10 @@ const AdminCreateQuestion = () => {
   };
 
   // Pagination calculations
-  const totalPages = Math.ceil(questions.length / questionsPerPage);
+  const totalPages = Math.max(1, Math.ceil(totalQuestions / questionsPerPage));
   const startIndex = (currentPage - 1) * questionsPerPage;
-  const endIndex = startIndex + questionsPerPage;
-  const currentQuestions = questions.slice(startIndex, endIndex);
+  const endIndex = Math.min(startIndex + questions.length, totalQuestions);
+  const currentQuestions = questions;
 
   const goToPage = (page: number) => {
     setCurrentPage(page);
@@ -939,21 +954,84 @@ const AdminCreateQuestion = () => {
         {showQuestionSection ? (
           <>
             <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div className="flex items-center gap-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
                 <h2 className="text-lg sm:text-xl font-semibold">Questions</h2>
-                {questions.length > 0 && (
-                  <span className="text-sm text-gray-500">
-                    Showing {startIndex + 1}-{Math.min(endIndex, questions.length)} of {questions.length} questions
-                  </span>
+                {totalQuestions > 0 && (
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3 text-sm text-gray-500">
+                    {totalQuestions > questionsPerPage && (
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={goToPreviousPage}
+                          disabled={currentPage === 1}
+                          className="flex items-center gap-1"
+                        >
+                          <ChevronLeft size={16} />
+                          Previous
+                        </Button>
+                        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                          let pageNum;
+                          if (totalPages <= 5) {
+                            pageNum = i + 1;
+                          } else if (currentPage <= 3) {
+                            pageNum = i + 1;
+                          } else if (currentPage >= totalPages - 2) {
+                            pageNum = totalPages - 4 + i;
+                          } else {
+                            pageNum = currentPage - 2 + i;
+                          }
+
+                          return (
+                            <Button
+                              key={pageNum}
+                              variant={currentPage === pageNum ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => goToPage(pageNum)}
+                              className="w-8 h-8 p-0"
+                            >
+                              {pageNum}
+                            </Button>
+                          );
+                        })}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={goToNextPage}
+                          disabled={currentPage === totalPages}
+                          className="flex items-center gap-1"
+                        >
+                          Next
+                          <ChevronRight size={16} />
+                        </Button>
+                      </div>
+                    )}
+                    <span>
+                      Showing {totalQuestions === 0 ? 0 : startIndex + 1}-{Math.min(endIndex, totalQuestions)} of {totalQuestions} questions
+                    </span>
+                  </div>
                 )}
               </div>
-              {/* <Button 
-                onClick={addNewQuestion}
-                variant="outline"
-                className="flex items-center gap-2 text-sm sm:text-base w-full sm:w-auto"
-              >
-                <Plus size={16} /> Add Question
-              </Button> */}
+              {questions.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-500">Rows per page</span>
+                  <div className="flex items-center gap-2">
+                    {[10, 25, 50, 100].map(size => (
+                      <Button
+                        key={size}
+                        variant={questionsPerPage === size ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => {
+                          setQuestionsPerPage(size);
+                          setCurrentPage(1);
+                        }}
+                      >
+                        {size}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="space-y-4 sm:space-y-6">
@@ -1171,104 +1249,10 @@ const AdminCreateQuestion = () => {
                 ))
               )}
             </div>
-
-            {/* Pagination Controls */}
-            {questions.length > questionsPerPage && (
-              <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-                <div className="text-sm text-gray-500">
-                  Page {currentPage} of {totalPages}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={goToPreviousPage}
-                    disabled={currentPage === 1}
-                    className="flex items-center gap-1"
-                  >
-                    <ChevronLeft size={16} />
-                    Previous
-                  </Button>
-                  
-                  <div className="flex items-center gap-1">
-                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                      let pageNum;
-                      if (totalPages <= 5) {
-                        pageNum = i + 1;
-                      } else if (currentPage <= 3) {
-                        pageNum = i + 1;
-                      } else if (currentPage >= totalPages - 2) {
-                        pageNum = totalPages - 4 + i;
-                      } else {
-                        pageNum = currentPage - 2 + i;
-                      }
-                      
-                      return (
-                        <Button
-                          key={pageNum}
-                          variant={currentPage === pageNum ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => goToPage(pageNum)}
-                          className="w-8 h-8 p-0"
-                        >
-                          {pageNum}
-                        </Button>
-                      );
-                    })}
-                  </div>
-                  
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={goToNextPage}
-                    disabled={currentPage === totalPages}
-                    className="flex items-center gap-1"
-                  >
-                    Next
-                    <ChevronRight size={16} />
-                  </Button>
-                </div>
-              </div>
-            )}
           </>
         ) : (
           renderEmptyState()
         )}
-
-        {/* Video URL Dialog */}
-        <Dialog open={videoDialogOpen} onOpenChange={setVideoDialogOpen}>
-          <DialogContent className="sm:max-w-md p-4 sm:p-6 max-w-[95vw] mx-4">
-            <DialogHeader>
-              <DialogTitle className="text-lg sm:text-xl">Add Video Tutorial</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-3 sm:space-y-4 py-2">
-              <p className="text-xs sm:text-sm text-gray-500">
-                Enter a YouTube or video URL to help students understand this question.
-              </p>
-              <Input 
-                placeholder="https://youtube.com/watch?v=..."
-                value={videoUrl}
-                onChange={(e) => setVideoUrl(e.target.value)}
-                className="text-sm sm:text-base"
-              />
-              <div className="flex justify-end gap-2">
-                <Button 
-                  variant="outline" 
-                  onClick={() => setVideoDialogOpen(false)}
-                  className="text-sm sm:text-base"
-                >
-                  Cancel
-                </Button>
-                <Button 
-                  onClick={saveVideoUrl}
-                  className="text-sm sm:text-base"
-                >
-                  Save
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
 
         {/* Hint Dialog */}
         <Dialog open={hintDialogOpen} onOpenChange={setHintDialogOpen}>

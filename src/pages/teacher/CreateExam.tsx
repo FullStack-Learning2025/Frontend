@@ -778,11 +778,23 @@ const TeacherCreateExam = () => {
                   {availableQuestions.map((question) => (
                     <div 
                       key={question.id} 
-                      className="flex items-center justify-between border rounded-lg p-3 hover:bg-gray-50"
+                      className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 border rounded-lg p-3 hover:bg-gray-50"
                     >
-                      <div className="flex-1">
-                        <p className="font-medium text-sm">{question.question}</p>
-                        <p className="text-xs text-gray-500 mt-1">
+                      <div className="flex-1 space-y-3">
+                        <div>
+                          <p className="font-medium text-sm whitespace-pre-line">{question.question}</p>
+                          {question.image && (
+                            <div className="mt-2 border border-gray-200 rounded-md p-2 bg-gray-50">
+                              <img
+                                src={question.image}
+                                alt="Question illustration"
+                                className="max-h-48 w-full object-contain"
+                                loading="lazy"
+                              />
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-500">
                           Correct Answer: {getCorrectAnswerText(question)} | 
                           {question.hint && ' Has Hint |'} 
                           {question.video && ' Has Video'}

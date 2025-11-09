@@ -1,52 +1,116 @@
 import { useState } from 'react';
+import { Menu, X, Languages } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/contexts/LanguageContext';
-import purplelogo from '../assets/ExamWalk Purple Logo.svg'
-import { LanguageSelector } from './LanguageSelector';
+import purpleLogo from '@/assets/ExamWalk Purple Logo.svg';
 
 const Navbar = () => {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { t } = useLanguage();
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const { t, language, setLanguage } = useLanguage();
+
+  const links = [
+    { href: '#features', label: t.navFeatures },
+    { href: '#advantages', label: t.navAdvantages },
+    { href: '#testimonials', label: t.navTestimonials },
+    { href: '#contact', label: t.navContact },
+  ];
 
   return (
-    <nav className="w-full z-50 bg-white border-b border-gray-200 py-3">
-      <div className="container mx-auto px-4 flex justify-between items-center">
-        <a href="/" className="flex items-center">
-          <img src={purplelogo} alt="ExamWalk" className="h-12" />
-        </a>
-        <div className="hidden md:flex items-center space-x-8">
-          <a href="#course-advantages" className="text-sm font-medium text-gray-700 hover:text-primary transition-colors">{t.whyExamWalk}</a>
-          <a href="#platform-features" className="text-sm font-medium text-gray-700 hover:text-primary transition-colors">{t.features}</a>
-          <a href="#mobile-app" className="text-sm font-medium text-gray-700 hover:text-primary transition-colors">{t.testimonials}</a>
-          <a href="#footer" className="text-sm font-medium text-gray-700 hover:text-primary transition-colors">{t.contactUs}</a>
-          <a href="/login" className="text-sm font-medium text-gray-700 hover:text-primary transition-colors">{t.login}</a>
-          <a href="/signup" className="btn-primary">{t.getStarted}</a>
-          <LanguageSelector />
-        </div>
-        <div className="md:hidden flex items-center gap-2">
-          <LanguageSelector />
-          <button
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="text-gray-500 focus:outline-none"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={mobileMenuOpen ? "M6 18L18 6M6 6l12 12" : "M4 6h16M4 12h16M4 18h16"} />
-            </svg>
-          </button>
-        </div>
-      </div>
-      {mobileMenuOpen && (
-        <div className="md:hidden bg-white px-4 py-5 shadow-lg absolute w-full">
-          <div className="flex flex-col space-y-4">
-            <a href="#course-advantages" className="text-sm font-medium text-gray-700 hover:text-primary transition-colors">{t.whyExamWalk}</a>
-            <a href="#platform-features" className="text-sm font-medium text-gray-700 hover:text-primary transition-colors">{t.features}</a>
-            <a href="#mobile-app" className="text-sm font-medium text-gray-700 hover:text-primary transition-colors">{t.testimonials}</a>
-            <a href="#footer" className="text-sm font-medium text-gray-700 hover:text-primary transition-colors">{t.contactUs}</a>
-            <a href="/login" className="text-sm font-medium text-gray-700 hover:text-primary transition-colors">{t.login}</a>
-            <a href="/signup" className="btn-primary w-full text-center">{t.getStarted}</a>
+    <header className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-lg border-b border-border/80">
+      <nav className="container">
+        <div className="flex items-center justify-between h-16">
+          <a href="/" className="flex items-center space-x-2">
+            <img src={purpleLogo} alt="ExamWalk" className="h-9 w-auto" />
+          </a>
+
+          <div className="hidden md:flex items-center space-x-8">
+            {links.map((link) => (
+              <a
+                key={link.href}
+                href={link.href}
+                className="text-foreground hover:text-primary transition-colors text-sm font-medium"
+              >
+                {link.label}
+              </a>
+            ))}
+          </div>
+
+          <div className="hidden md:flex items-center space-x-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setLanguage(language === 'en' ? 'ar' : 'en')}
+              className="text-sm font-medium"
+            >
+              <Languages className="h-4 w-4 mr-2" />
+              {language === 'en' ? 'العربية' : 'English'}
+            </Button>
+            <Button variant="ghost" className="text-sm font-medium" asChild>
+              <a href="/login">{t.navLogin}</a>
+            </Button>
+            <Button className="bg-gradient-primary" asChild>
+              <a href="/signup">{t.navGetStarted}</a>
+            </Button>
+          </div>
+
+          <div className="md:hidden flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setLanguage(language === 'en' ? 'ar' : 'en')}
+              className="text-sm font-medium"
+            >
+              <Languages className="h-4 w-4 mr-2" />
+              {language === 'en' ? 'العربية' : 'English'}
+            </Button>
+            <button
+              type="button"
+              className="p-2 rounded-lg border border-border text-foreground"
+              onClick={() => setIsMenuOpen((prev) => !prev)}
+              aria-label="Toggle navigation"
+            >
+              {isMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </button>
           </div>
         </div>
-      )}
-    </nav>
+
+        {isMenuOpen && (
+          <div className="md:hidden py-4 space-y-4 border-t border-border">
+            <div className="flex flex-col space-y-3">
+              {links.map((link) => (
+                <a
+                  key={link.href}
+                  href={link.href}
+                  className="text-foreground hover:text-primary transition-colors text-sm font-medium"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  {link.label}
+                </a>
+              ))}
+            </div>
+            <div className="flex flex-col space-y-2 pt-2">
+              <Button
+                variant="ghost"
+                onClick={() => setLanguage(language === 'en' ? 'ar' : 'en')}
+              >
+                <Languages className="h-4 w-4 mr-2" />
+                {language === 'en' ? 'العربية' : 'English'}
+              </Button>
+              <Button variant="ghost" asChild>
+                <a href="/login" onClick={() => setIsMenuOpen(false)}>
+                  {t.navLogin}
+                </a>
+              </Button>
+              <Button className="bg-gradient-primary" asChild>
+                <a href="/signup" onClick={() => setIsMenuOpen(false)}>
+                  {t.navGetStarted}
+                </a>
+              </Button>
+            </div>
+          </div>
+        )}
+      </nav>
+    </header>
   );
 };
 

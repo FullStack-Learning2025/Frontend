@@ -40,6 +40,8 @@ import AdminPromoDetail from './pages/admin/PromoDetail';
 import PrivacyPolicyAdmin from './pages/admin/PrivacyPolicy';
 import TermsConditionsAdmin from './pages/admin/TermsConditions';
 import AdminQuestionsFeedback from './pages/admin/QuestionsFeedback';
+import ErrorLogsPage from './pages/admin/ErrorLogsPage';
+import ErrorLogDetail from './components/admin/ErrorLogDetail';
 
 // Teacher components
 import TeacherLayout from './layouts/TeacherLayout';
@@ -62,11 +64,12 @@ import ProtectedRoute from './components/ProtectedRoute';
 import StudentLayout from './layouts/StudentLayout';
 import StudentDashboard from './pages/student/Dashboard';
 import StudentExams from './pages/student/Exams';
-import StudentQuestions from './pages/student/Questions';
-import StudentLessons from './pages/student/Lessons';
-import StudentBlogs from './pages/student/Blogs';
-import StudentProgress from './pages/student/Progress';
-import StudentWinningQuestions from './pages/student/WinningQuestions.tsx';
+import StudentQuestions from "./pages/student/Questions";
+import StudentLessons from "./pages/student/Lessons";
+import StudentBlogs from "./pages/student/Blogs";
+import StudentWinningQuestions from "./pages/student/WinningQuestions";
+import StudentProgress from "./pages/student/Progress";
+import RandomExams from "./pages/student/RandomExams";
 
 function App() {
   return (
@@ -121,6 +124,8 @@ function App() {
                   <Route path="promo-detail/:id" element={<AdminPromoDetail />} />
                   <Route path="create-promo" element={<AdminPromoDetail />} />
                   <Route path="questions-feedback" element={<AdminQuestionsFeedback />} />
+                  <Route path="error-logs" element={<ErrorLogsPage />} />
+                  <Route path="error-logs/:id" element={<ErrorLogDetail />} />
                   <Route path="privacy-policy" element={<PrivacyPolicyAdmin />} />
                   <Route path="terms-conditions" element={<TermsConditionsAdmin />} />
                 </Route>
@@ -132,6 +137,7 @@ function App() {
                   <Route path="dashboard" element={<StudentDashboard />} />
                   {/* Rename: Courses -> Exams view (keep courses path for backward-compat) */}
                   <Route path="exams" element={<StudentExams />} />
+                  <Route path="random-exams" element={<RandomExams />} />
                   <Route path="questions" element={<StudentQuestions />} />
                   {/* New Lessons tab (formerly Exams) */}
                   <Route path="lessons" element={<StudentLessons />} />

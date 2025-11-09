@@ -1440,6 +1440,20 @@ const StudentExams: React.FC = () => {
                           {q.question}
                         </div>
                       </div>
+                      {(!q.type || q.type === 'text') && q.image && (
+                        <div className={cn('w-full flex justify-center', examStarted ? 'mt-1' : 'mt-3')}>
+                          <div className={cn('w-full', examStarted ? 'max-w-2xl' : 'max-w-4xl')}>
+                            <div className="flex justify-center">
+                              <img
+                                src={q.image}
+                                alt="Question illustration"
+                                className="max-h-[60vh] w-full object-contain rounded-lg border border-gray-200 dark:border-gray-800 bg-white"
+                                loading="lazy"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
                       <div className="flex flex-col items-end gap-2">
                         <div className="flex items-center gap-2">
                           {answerMedia[q.id]?.url && (

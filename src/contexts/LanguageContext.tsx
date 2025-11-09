@@ -26,15 +26,19 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setLanguageState(lang);
     localStorage.setItem('language', lang);
     document.documentElement.lang = lang;
+    document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
   };
 
   useEffect(() => {
     document.documentElement.lang = language;
+    document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
   }, [language]);
 
   return (
     <LanguageContext.Provider value={{ language, setLanguage, t: translations }}>
-      {children}
+      <div className={language === 'ar' ? 'font-cairo' : undefined} dir={language === 'ar' ? 'rtl' : 'ltr'}>
+        {children}
+      </div>
     </LanguageContext.Provider>
   );
 };
