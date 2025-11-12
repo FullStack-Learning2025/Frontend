@@ -1,15 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import registrationImg from '../assets/registeration.png';
 import purpleLogo from '@/assets/ExamWalk Purple Logo.svg';
+import studyIllustration from '@/assets/students-exam.png';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { Dialog, DialogContent, DialogTitle, DialogActions } from '@mui/material';
 import { Button } from '@/components/ui/button';
 import PhoneInput from 'react-phone-input-2';
 import 'react-phone-input-2/lib/style.css';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, ArrowRight, CheckCircle2 } from 'lucide-react';
 
 const Login = () => {
   const { login, isAuthenticated, role, isLoading } = useAuth();
@@ -558,114 +558,177 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#7C3AED] px-2 relative overflow-hidden pb-10 w-screen">
-    <div className="flex flex-col items-center mb-2 animate-fadein pt-5 pb-10">
-        <a href="/">
-            <img src={purpleLogo} alt="ExamWalk Logo" className="h-16 drop-shadow-lg mb-2" style={{ filter: 'drop-shadow(0 4px 16px rgba(124,60,237,0.5))' }} />
-        </a>
-    </div>
+    <div className="min-h-screen w-full bg-background text-foreground">
+      <div className="absolute inset-0 -z-10 overflow-hidden">
+        <div className="absolute top-[-30rem] left-[-10rem] h-[45rem] w-[45rem] rounded-full bg-primary/5 blur-3xl" />
+        <div className="absolute bottom-[-25rem] right-[-15rem] h-[40rem] w-[40rem] rounded-full bg-secondary/10 blur-3xl" />
+      </div>
 
-    <div className="flex items-center justify-center">
-      {/* Animated background blobs */}
-      <div className="absolute -top-32 -left-32 w-96 h-96 bg-white/10 rounded-full blur-3xl animate-pulse z-0" />
-      <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-white/10 rounded-full blur-3xl animate-pulse z-0" />
-      <div className="relative z-10 w-full max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-center gap-0 md:gap-8 animate-slideup-fadein">
-        {/* Left: Login Card */}
-        <div className="flex-1 flex flex-col items-center">
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8 z-10">
-            <div className="flex flex-col items-center mb-6">
-              <h2 className="text-3xl font-extrabold text-[#7C3AED] mb-1 tracking-tight">Welcome Back <span role='img' aria-label='wave'>👋</span></h2>
-              <p className="text-gray-600 text-base text-center">Please login to continue</p>
+      <div className="max-w-6xl mx-auto px-2 py-12 lg:py-8">
+        <header className="flex items-center gap-3 mb-8" aria-label="ExamWalk">
+          <a href="/" className="flex items-center gap-3">
+            <img
+              src={purpleLogo}
+              alt="ExamWalk Logo"
+              className="h-10 w-auto drop-shadow-sm"
+            />
+            <div className="flex flex-col">
+              <span className="text-xl font-semibold text-primary">ExamWalk</span>
+              <span className="text-xs text-muted-foreground tracking-wider uppercase">
+                Master Exams with Confidence
+              </span>
             </div>
-            <form onSubmit={handleSubmit} className="space-y-5">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t.email}</label>
-                <input type="email" name="email" value={form.email} onChange={handleChange} required className="mt-1 w-full rounded-lg border border-gray-300 bg-white/70 px-3 py-2 focus:outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED] transition-all duration-200" />
+          </a>
+        </header>
+
+        <div className="grid lg:grid-cols-2 gap-10 lg:gap-16 items-center">
+          <div className="order-2 lg:order-1 bg-card/80 backdrop-blur-sm border border-border/60 rounded-3xl shadow-lg shadow-primary/5 p-8 sm:p-10 md:p-12">
+            <div className="mb-8">
+              <p className="text-sm font-medium text-primary uppercase tracking-[0.2em] mb-2">
+                {t.welcomeBack || 'Welcome back'}
+              </p>
+              <h1 className="text-3xl sm:text-4xl font-semibold text-foreground mb-2">
+                {t.loginHeadline || 'Sign in to your account'}
+              </h1>
+              <p className="text-muted-foreground text-sm sm:text-base">
+                {t.loginSubheadline || 'Access personalized practice, live analytics, and exam-ready insights.'}
+              </p>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-muted-foreground" htmlFor="email">
+                  {t.emailLabel || 'Email address'}
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  name="email"
+                  value={form.email}
+                  onChange={handleChange}
+                  required
+                  className="w-full rounded-xl border border-border bg-background/90 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-shadow"
+                  placeholder="you@example.com"
+                />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t.password}</label>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-muted-foreground" htmlFor="password">
+                  {t.passwordLabel || 'Password'}
+                </label>
                 <div className="relative">
-                  <input 
-                    type={showPassword ? "text" : "password"} 
-                    name="password" 
-                    value={form.password} 
-                    onChange={handleChange} 
-                    required 
-                    className="mt-1 w-full rounded-lg border border-gray-300 bg-white/70 px-3 py-2 focus:outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED] transition-all duration-200" 
+                  <input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    name="password"
+                    value={form.password}
+                    onChange={handleChange}
+                    required
+                    className="w-full rounded-xl border border-border bg-background/90 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-shadow"
+                    placeholder="••••••••"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                    className="absolute inset-y-0 right-3 flex items-center text-muted-foreground hover:text-foreground"
                   >
-                    {showPassword ? (
-                      <EyeOff className="h-5 w-5" />
-                    ) : (
-                      <Eye className="h-5 w-5" />
-                    )}
+                    {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                   </button>
                 </div>
               </div>
-              <div className="flex items-center justify-between text-sm">
-                <label className="flex items-center">
-                  <input type="checkbox" name="remember" checked={form.remember} onChange={handleChange} className="mr-2" />
-                  {t.rememberMe}
+
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    name="remember"
+                    checked={form.remember}
+                    onChange={handleChange}
+                    className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                  />
+                  {t.rememberMe || 'Remember me'}
                 </label>
-                <button 
+                <button
                   type="button"
-                  onClick={() => setShowForgotModal(true)} 
-                  className="text-[#7C3AED] hover:underline focus:outline-none"
+                  onClick={() => setShowForgotModal(true)}
+                  className="text-sm font-medium text-primary hover:text-primary/80"
                 >
-                  {t.forgotPassword}
+                  {t.forgotPassword || 'Forgot password?'}
                 </button>
               </div>
-              <button 
-                type="submit" 
+
+              <Button
+                type="submit"
                 disabled={loading}
-                className="w-full bg-[#7C3AED] text-white font-semibold py-2 rounded-lg shadow-lg hover:bg-[#6d28d9] hover:scale-105 transition-all duration-200 flex items-center justify-center"
+                className="w-full h-11 text-base font-semibold shadow-md shadow-primary/10 hover:shadow-primary/20"
               >
-                {loading ? 'Logging in...' : t.login}
-              </button>
+                {loading ? 'Logging in...' : t.login || 'Sign in'}
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+
             </form>
-            <div className="text-center mt-4 text-sm text-gray-600">
-              {t.dontHaveAccount} <a href="/signup" className="text-[#7C3AED] font-semibold hover:underline">{t.signup}</a>
-              <div className="mt-2 space-x-4">
-                <a 
-                  href="/privacy-policy-standalone" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="text-[#7C3AED] hover:underline text-xs"
-                >
-                  {t.privacyPolicy}
-                </a>
-                <span className="text-gray-400">|</span>
-                <a 
-                  href="/terms-conditions-standalone" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="text-[#7C3AED] hover:underline text-xs"
-                >
-                  {t.termsConditions}
-                </a>
+
+            <div className="mt-8 text-sm text-muted-foreground text-center">
+              {t.dontHaveAccount || "Don't have an account?"}{' '}
+              <a href="/signup" className="font-semibold text-primary hover:text-primary/80">
+                {t.signup || 'Sign up'}
+              </a>
+            </div>
+
+            <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs sm:text-sm text-muted-foreground">
+              <a
+                href="/privacy-policy-standalone"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-primary"
+              >
+                {t.privacyPolicy || 'Privacy Policy'}
+              </a>
+              <a
+                href="/terms-conditions-standalone"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-primary"
+              >
+                {t.termsConditions || 'Terms & Conditions'}
+              </a>
+            </div>
+          </div>
+
+          <div className="order-1 lg:order-2 relative">
+            <div className="absolute -inset-2 rounded-[2.5rem] bg-gradient-to-br from-primary/30 via-secondary/20 to-accent/20 blur-2xl opacity-75" />
+            <div className="relative rounded-[2.5rem] border border-border/50 bg-gradient-to-br from-background via-background/95 to-primary/5 shadow-xl overflow-hidden">
+              <div className="absolute inset-0 bg-grid-small border-border/80 opacity-[0.07]" />
+              <div className="relative p-10 md:p-14 flex flex-col h-full justify-between">
+                <div className="space-y-4 max-w-sm">
+                  <span className="inline-flex items-center gap-2 rounded-full bg-primary/10 text-primary px-3 py-1 text-xs font-semibold uppercase tracking-wide">
+                    {t.loginPanelTag || 'Trusted by achievers'}
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                  </span>
+                  <h2 className="text-3xl font-semibold text-foreground leading-tight">
+                    {t.loginPanelHeadline || 'Accelerate your exam readiness with focused practice.'}
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    {t.loginPanelBody ||
+                      'Curated question banks, AI-powered feedback, and real-time analytics keep you ahead of every assessment.'}
+                  </p>
+                </div>
+
+                <div className="mt-10">
+                  <img
+                    src={studyIllustration}
+                    alt={t.loginIllustrationAlt || 'Student preparing for exams'}
+                    className="w-full max-w-lg mx-auto drop-shadow-md"
+                    loading="lazy"
+                  />
+                </div>
               </div>
             </div>
           </div>
         </div>
-        {/* Right: Image */}
-        <div className="hidden md:flex flex-1 items-center justify-center h-full">
-          <img src={registrationImg} alt="Registration" className="hidden md:block md:w-[400px] w-auto object-contain rounded-2xl animate-fadein" />
-        </div>
       </div>
-      {/* Animations */}
-      <style>{`
-        .animate-fadein { animation: fadein 0.8s; }
-        .animate-slideup-fadein { animation: slideupfadein 0.9s cubic-bezier(.39,.575,.565,1) both; }
-        @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes slideupfadein { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: none; } }
-      `}</style>
-    </div>
 
-    {/* OTP Dialog */}
+      {/* OTP Dialog */}
     <Dialog open={showCodeInput} onClose={() => setShowCodeInput(false)}>
       <DialogTitle>Verify Your Phone</DialogTitle>
       <DialogContent>

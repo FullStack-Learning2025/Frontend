@@ -255,9 +255,19 @@ export const en = {
   // Login
   welcomeBack: "Welcome Back",
   pleaseLoginToContinue: "Please login to continue",
+  loginHeadline: "Sign in to your account",
+  loginSubheadline: "Access personalized practice, live analytics, and exam-ready insights.",
+  emailLabel: "Email address",
+  passwordLabel: "Password",
   rememberMe: "Remember me",
   forgotPassword: "Forgot Password?",
   dontHaveAccount: "Don't have an account?",
+  loginDivider: "Continue with",
+  loginWithGoogle: "Sign in with Google",
+  loginPanelTag: "Trusted by achievers",
+  loginPanelHeadline: "Accelerate your exam readiness with focused practice.",
+  loginPanelBody: "Curated question banks, AI-powered feedback, and real-time analytics keep you ahead of every assessment.",
+  loginIllustrationAlt: "Student preparing for exams",
   
   // Table headers
   name: "Name",

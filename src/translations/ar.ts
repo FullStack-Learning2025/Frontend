@@ -259,11 +259,21 @@ export const ar = {
   alreadyHaveAccount: "هل لديك حساب بالفعل؟",
   
   // Login
-  welcomeBack: "مرحباً بعودتك",
+  welcomeBack: "مرحبًا بعودتك",
   pleaseLoginToContinue: "يرجى تسجيل الدخول للمتابعة",
+  loginHeadline: "سجل دخولك إلى حسابك",
+  loginSubheadline: "احصل على تدريب مخصص وتحليلات مباشرة ورؤى جاهزة للامتحانات.",
+  emailLabel: "عنوان البريد الإلكتروني",
+  passwordLabel: "كلمة المرور",
   rememberMe: "تذكرني",
   forgotPassword: "هل نسيت كلمة المرور؟",
   dontHaveAccount: "ليس لديك حساب؟",
+  loginDivider: "تابع باستخدام",
+  loginWithGoogle: "تسجيل الدخول باستخدام جوجل",
+  loginPanelTag: "موثوق من المتفوقين",
+  loginPanelHeadline: "سارع في استعدادك للامتحان بتدريب مركز.",
+  loginPanelBody: "بنوك أسئلة مُخصصة، وتغذية راجعة مدعومة بالذكاء الاصطناعي، وتحليلات فورية تُبقيك في الصدارة.",
+  loginIllustrationAlt: "طالب يستعد للامتحانات",
   
   // Table headers
   name: "الاسم",
